@@ -8,7 +8,7 @@ A desktop app for playing tabletop-style campaigns with Claude as your Game Mast
 |---|---|
 | Mac (Apple Silicon or Intel, macOS 11+) | [Campaign Keeper 1.0.5.dmg](https://github.com/Wolfgoon/campaign-keeper/raw/main/installers/Campaign%20Keeper%201.0.5.dmg) |
 | Windows 10 or 11 (64-bit) | [Campaign Keeper Setup 1.0.5.exe](https://github.com/Wolfgoon/campaign-keeper/raw/main/installers/Campaign%20Keeper%20Setup%201.0.5.exe) |
-| Linux or Steam Deck (Desktop Mode) | [Campaign Keeper 1.0.5 (Linux & Steam Deck).tar.gz](https://github.com/Wolfgoon/campaign-keeper/raw/main/installers/Campaign%20Keeper%201.0.5%20(Linux%20%26%20Steam%20Deck).tar.gz) |
+| Linux or Steam Deck (Desktop Mode) | [Campaign Keeper 1.0.5 (Linux & Steam Deck).tar.gz](https://github.com/Wolfgoon/campaign-keeper/raw/main/installers/Campaign%20Keeper%201.0.5%20%28Linux%20%26%20Steam%20Deck%29.tar.gz) |
 
 ## Install
 
