@@ -1,0 +1,28 @@
+Campaign Keeper 1.0.5: how to install
+
+ON A MAC: "Campaign Keeper 1.0.5.dmg"
+  Open it and drag Campaign Keeper into Applications. The first time you
+  open it, macOS may say it can't verify the app: click Done, then open
+  System Settings > Privacy & Security and click "Open Anyway".
+
+ON WINDOWS: "Campaign Keeper Setup 1.0.5.exe"
+  Double-click it. If Windows says "Windows protected your PC", click
+  "More info", then "Run anyway". Click Install: it installs just for you
+  (no administrator needed), adds Start menu and desktop shortcuts, and
+  can be removed in Settings > Apps. When Windows Firewall asks, allow
+  Campaign Keeper on private networks so friends can join your games.
+
+ON LINUX OR A STEAM DECK: "Campaign Keeper 1.0.5 (Linux & Steam Deck).tar.gz"
+  In Desktop Mode, right-click it > Extract > Extract archive here, open
+  the "Campaign Keeper" folder and double-click "Campaign Keeper Setup".
+  Click Install: it goes into the app menu, just for you. Use a mouse and
+  keyboard.
+
+WHO NEEDS WHAT
+  Players joining a friend's game: just the app.
+  Hosts (and solo players): Claude Code with a Claude Pro or Max plan, or an
+  Anthropic API key. The app installs Claude Code for you: Settings >
+  "Set up Claude Code for me", then "Sign in to Claude Code".
+
+Both warnings appear because the app isn't signed with a paid developer
+certificate. They show once per computer.
