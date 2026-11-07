@@ -44,4 +44,5 @@ export const MODELS = [
   { id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5", note: "Faster and cheaper. $2 / $10 per million tokens in / out." },
   { id: "claude-haiku-5-5", name: "Claude Haiku 5.5", note: "Fastest and cheapest, lighter on continuity. $0.10 / $0.50 per million tokens." },
   { id: "claude-fable-5-1", name: "Claude Fable 5.1", note: "Anthropic's most capable model. $10 / $50 per million tokens in / out." },
+  { id: "deepseek-flash", name: "DeepSeek V Flash", note: "DeepSeek V4.1 Flash (1M context). $0.15 / $0.60 per million tokens in / out." },
 ];

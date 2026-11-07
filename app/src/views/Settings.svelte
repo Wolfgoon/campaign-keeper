@@ -11,7 +11,7 @@
   let models = $state<string[]>([]);
   let installing = $state(false);
 
-  const PRESETS = [["OpenRouter", "https://openrouter.ai/api/v1"], ["Ollama", "http://localhost:11434/v1"], ["LM Studio", "http://localhost:1234/v1"]];
+  const PRESETS = [["DeepSeek", "https://api.deepseek.com/v1"], ["OpenRouter", "https://openrouter.ai/api/v1"], ["Ollama", "http://localhost:11434/v1"], ["LM Studio", "http://localhost:1234/v1"]];
 
   let version = $state("");
 
@@ -52,10 +52,11 @@
       <h3>Read aloud</h3>
       <Voices {cfg} />
     {:else}
-    <h3>Connect to Claude</h3>
+    <h3>Connect</h3>
     <p class="small muted">The Play and Scribe tabs use this. Everything else works without it.</p>
     <label class="check"><input type="radio" bind:group={cfg.engine} value="claude_code" style="width:auto" /> <span>Claude Code: your Claude account and plan, no API key</span></label>
     <label class="check"><input type="radio" bind:group={cfg.engine} value="api" style="width:auto" /> <span>Anthropic API key: pay per use</span></label>
+    <label class="check"><input type="radio" bind:group={cfg.engine} value="deepseek" style="width:auto" /> <span>DeepSeek API key: DeepSeek V Flash</span></label>
     <label class="check"><input type="radio" bind:group={cfg.engine} value="other" style="width:auto" /> <span>Other models: OpenRouter, or your own with Ollama or LM Studio</span></label>
 
     {#if cfg.engine === "claude_code"}
@@ -69,8 +70,16 @@
       <label class="field"><span>API key</span><input type="password" bind:value={cfg.api_key} placeholder="sk-ant-…" /></label>
       <label class="check small"><input type="checkbox" bind:checked={cfg.remember_key} /> <span>Remember the key on this computer</span></label>
       <label class="check small"><input type="checkbox" bind:checked={cfg.fallbacks} /> <span>If the model declines a request, retry it on a fallback model. Safety classifiers can occasionally flag ordinary fiction; this keeps the game going.</span></label>
+    {:else if cfg.engine === "deepseek"}
+      <label class="field"><span>DeepSeek API key (DeepSeek V Flash)</span><input type="password" bind:value={cfg.deepseek_key} placeholder="sk-…" /></label>
+      <p class="small muted">Uses DeepSeek V4.1 Flash (<code>deepseek-flash</code>, 1M context). $0.15 / $0.60 per million tokens in / out.</p>
+      <label class="field"><span>Thinking effort</span>
+        <select bind:value={cfg.effort}>
+          <option value="none">None: instant replies (no thinking)</option><option value="low">Low: quickest replies</option><option value="medium">Medium: good default</option><option value="high">High: more careful</option><option value="max">Max: slowest, most thorough</option>
+        </select>
+      </label>
     {:else}
-      <div class="row">{#each PRESETS as [n, u]}<button onclick={() => (cfg.other_url = u)}>{n}</button>{/each}</div>
+      <div class="row">{#each PRESETS as [n, u]}<button onclick={() => { cfg.other_url = u; if (n === "DeepSeek" && !cfg.other_model) cfg.other_model = "deepseek-flash"; }}>{n}</button>{/each}</div>
       <label class="field"><span>Address</span><input bind:value={cfg.other_url} /></label>
       <label class="field"><span>API key (not needed for Ollama or LM Studio)</span><input type="password" bind:value={cfg.other_key} /></label>
       <label class="field"><span>Model</span><input bind:value={cfg.other_model} list="model-list" /></label>
@@ -79,11 +88,14 @@
       <p class="small muted">Models on your own computer need a large context window (32,000 tokens or more). Smaller ones may forget details or the app's tags.</p>
     {/if}
 
-    {#if cfg.engine !== "other"}
+    {#if cfg.engine !== "other" && cfg.engine !== "deepseek"}
       <label class="field"><span>Model</span>
         <select bind:value={cfg.model}>{#each MODELS as m}<option value={m.id}>{m.name}</option>{/each}</select>
       </label>
       <p class="small muted">{MODELS.find((m) => m.id === cfg.model)?.note}</p>
+      {#if cfg.model === "deepseek-flash"}
+        <label class="field"><span>DeepSeek API key (DeepSeek V Flash)</span><input type="password" bind:value={cfg.deepseek_key} placeholder="sk-…" /></label>
+      {/if}
       <label class="field"><span>Thinking effort</span>
         <select bind:value={cfg.effort}>
           <option value="low">Low: quickest replies</option><option value="medium">Medium: good default</option><option value="high">High: more careful</option><option value="xhigh">Extra high</option><option value="max">Max: slowest, most thorough</option>

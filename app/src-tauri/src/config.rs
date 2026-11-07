@@ -11,10 +11,11 @@ use crate::util::atomic_write;
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct Config {
-    /// "claude_code", "api" or "other".
+    /// "claude_code", "api", "deepseek" or "other".
     pub engine: String,
     pub claude_path: String,
     pub api_key: String,
+    pub deepseek_key: String,
     pub remember_key: bool,
     pub model: String,
     pub effort: String,
@@ -61,6 +62,7 @@ impl Default for Config {
             engine: "claude_code".into(),
             claude_path: String::new(),
             api_key: String::new(),
+            deepseek_key: String::new(),
             remember_key: false,
             model: "claude-opus-5-5".into(),
             effort: "medium".into(),
@@ -137,5 +139,15 @@ impl Config {
             return self.api_key.trim().to_string();
         }
         std::env::var("ANTHROPIC_API_KEY").unwrap_or_default()
+    }
+
+    pub fn resolved_deepseek_key(&self) -> String {
+        if !self.deepseek_key.trim().is_empty() {
+            return self.deepseek_key.trim().to_string();
+        }
+        if self.other_url.to_lowercase().contains("deepseek") && !self.other_key.trim().is_empty() {
+            return self.other_key.trim().to_string();
+        }
+        std::env::var("DEEPSEEK_API_KEY").unwrap_or_default()
     }
 }

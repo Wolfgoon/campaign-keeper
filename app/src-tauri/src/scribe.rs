@@ -179,11 +179,83 @@ fn user_prompt(entries: &[Entry], request: &str, include_chat: bool) -> String {
 
 pub fn run(cfg: &Config, dir: &Path, entries: &[Entry], request: &str, include_chat: bool) -> Result<Outcome, String> {
     let prompt = user_prompt(entries, request, include_chat);
+    if cfg.engine == "deepseek" || (cfg.engine != "other" && cfg.model.to_lowercase().starts_with("deepseek")) {
+        return run_deepseek(cfg, dir, &prompt);
+    }
     match cfg.engine.as_str() {
         "api" => run_api(cfg, dir, &prompt),
         "claude_code" => run_claude_code(cfg, dir, &prompt),
-        _ => Err("The Scribe edits files with Claude's tools, so it needs Claude Code or an Anthropic API key (Settings). The GM can still play on other models.".into()),
+        _ => Err("The Scribe edits files with Claude's or DeepSeek's tools, so it needs Claude Code, an Anthropic API key, or a DeepSeek API key (Settings). The GM can still play on other models.".into()),
     }
+}
+
+fn run_deepseek(cfg: &Config, dir: &Path, prompt: &str) -> Result<Outcome, String> {
+    let key = cfg.resolved_deepseek_key();
+    if key.is_empty() {
+        return Err("Add your DeepSeek API key in Settings.".into());
+    }
+    let url = format!("{}/chat/completions", crate::engine::openai::deepseek_base_url().trim_end_matches('/'));
+    let model = crate::engine::openai::normalize_deepseek_model(&cfg.model);
+    let effort = crate::engine::openai::deepseek_effort(&cfg.effort);
+    let max_tokens = if effort == "none" { 8192 } else { 32000 };
+    let oai_tools: Vec<Value> = tools()
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|t| json!({ "type": "function", "function": { "name": t["name"], "description": t["description"], "parameters": t["input_schema"] } }))
+        .collect();
+    let mut messages = vec![
+        json!({ "role": "system", "content": SYSTEM }),
+        json!({ "role": "user", "content": format!("{}\n\n{}", all_files(dir), prompt) }),
+    ];
+    let mut edits = BTreeMap::new();
+    let mut summary = String::new();
+    for _ in 0..40 {
+        let body = json!({
+            "model": model,
+            "max_tokens": max_tokens,
+            "reasoning_effort": effort,
+            "tools": oai_tools,
+            "messages": messages,
+        });
+        let resp = ureq::post(&url)
+            .timeout(Duration::from_secs(900))
+            .set("authorization", &format!("Bearer {key}"))
+            .set("content-type", "application/json")
+            .send_json(body)
+            .map_err(|e| match e {
+                ureq::Error::Status(401, _) => "The DeepSeek API key was rejected. Check it in Settings.".to_string(),
+                ureq::Error::Status(c, r) => format!("The service reported an error ({c}): {}", crate::util::clip(&r.into_string().unwrap_or_default(), 300)),
+                e => e.to_string(),
+            })?;
+        let v: Value = resp.into_json().map_err(|e| e.to_string())?;
+        let choice = &v["choices"][0];
+        let stop = choice["finish_reason"].as_str().unwrap_or("");
+        let msg = choice["message"].clone();
+        if let Some(c) = msg["content"].as_str() {
+            if !c.trim().is_empty() {
+                summary = c.to_string();
+            }
+        }
+        if stop == "length" {
+            summary.push_str("\n\nThe Scribe ran out of output space before it finished, so its last edit was skipped. Review what's here, then run it again for anything missing.");
+            break;
+        }
+        let Some(calls) = msg["tool_calls"].as_array().filter(|a| !a.is_empty()).cloned() else {
+            break;
+        };
+        messages.push(msg);
+        for tc in calls {
+            let name = tc["function"]["name"].as_str().unwrap_or("");
+            let args: Value = tc["function"]["arguments"].as_str().and_then(|s| serde_json::from_str(s).ok()).unwrap_or_else(|| json!({}));
+            let text = match tool(dir, &mut edits, name, &args) {
+                Ok(t) => t,
+                Err(e) => format!("error: {e}"),
+            };
+            messages.push(json!({ "role": "tool", "tool_call_id": tc["id"], "content": text }));
+        }
+    }
+    Ok(Outcome { summary, proposals: proposals(dir, &edits) })
 }
 
 fn run_api(cfg: &Config, dir: &Path, prompt: &str) -> Result<Outcome, String> {

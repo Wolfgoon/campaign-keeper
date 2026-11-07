@@ -32,6 +32,9 @@ pub struct Reply {
 }
 
 pub fn stream(cfg: &Config, req: &Request, on_delta: &mut dyn FnMut(&str), cancel: &AtomicBool) -> Result<Reply, String> {
+    if cfg.engine == "deepseek" || (cfg.engine != "other" && cfg.model.to_lowercase().starts_with("deepseek")) {
+        return openai::stream_deepseek(cfg, req, on_delta, cancel);
+    }
     match cfg.engine.as_str() {
         "api" => anthropic::stream(cfg, req, on_delta, cancel),
         "other" => openai::stream(cfg, req, on_delta, cancel),
@@ -42,6 +45,9 @@ pub fn stream(cfg: &Config, req: &Request, on_delta: &mut dyn FnMut(&str), cance
 /// A small background job (keeper, condenser, referee). Never touches the game's chat.
 pub fn helper(cfg: &Config, system: &str, user: &str) -> Result<String, String> {
     let model = helper_model(cfg);
+    if cfg.engine == "deepseek" || model.to_lowercase().starts_with("deepseek") {
+        return openai::once_deepseek(cfg, &model, system, user);
+    }
     match cfg.engine.as_str() {
         "api" => anthropic::once(cfg, &model, system, user),
         "other" => openai::once(cfg, &model, system, user),
@@ -53,6 +59,9 @@ fn helper_model(cfg: &Config) -> String {
     let m = cfg.helper_model.trim();
     if !m.is_empty() && m != "auto" {
         return m.to_string();
+    }
+    if cfg.engine == "deepseek" || (cfg.engine != "other" && cfg.model.to_lowercase().starts_with("deepseek")) {
+        return "deepseek-flash".into();
     }
     match cfg.engine.as_str() {
         "api" => "claude-haiku-5-5".into(),
@@ -71,6 +80,8 @@ pub fn price_per_mtok(model: &str) -> Option<(f64, f64)> {
         (2.0, 10.0)
     } else if m.contains("haiku") {
         (0.10, 0.50)
+    } else if m.contains("deepseek") {
+        (0.15, 0.60)
     } else {
         return None;
     })
