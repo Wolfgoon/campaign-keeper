@@ -245,3 +245,45 @@ party page / player buttons from the one before).
 Verified after the bump: `cargo test --lib` 147 passed, 0 failed, 2 ignored; both installers embed the rebuilt
 `dist/` (`index-C1R1GU3f.js`), so browser players served by a host on 3.0.2 get the new player screen.
 
+## Fix after 3.0.2: experience only reached one sheet (2026-11-21)
+
+Reported from a real table: "all the xp only goes to the host's stats."
+
+- **Cause.** `game::apply_rpg` resolved the character for an `<rpg>` line with no `Name:` prefix as
+  `s.rules.names().into_iter().next()` — the first key of the `BTreeMap`, i.e. whichever sheet sorts first
+  alphabetically. Lines the GM did name (`Aria: xp +40`) always went to the right sheet, but every unnamed one
+  (`xp +120`, `defeat 4 the wolf`, `money +10`) landed on that one sheet, which at a table is as often as not
+  the host's character. It also applied to AD (`World`), so `defeat` and `skill xp` could pool on one sheet.
+- **Fix, three parts.**
+  1. `apply_rpg` now takes the turn's `p.actions` and resolves an unnamed line to **the character who acted**,
+     when exactly one did (a solo turn, or one player acting in a round). A table round with several actors no
+     longer guesses.
+  2. With several characters and no single actor, an unnamed line is **refused** with an actionable notice:
+     `Refused: xp +20 (say whose it is: Aria, Bram (or all: for everyone))`, which goes into `rpg_notices`, so
+     the GM names it next turn. Nothing lands on the wrong sheet any more.
+  3. New party lines: `all: …` / `everyone: …` / `party: …` apply the change to every sheet
+     (`all: xp +40`, `all: money +10`, `all: item + Rations x2`). Implemented once in `rpg::Rules::apply`
+     (`apply_party` → `apply_one` per sheet) so Classic and AD behave the same; `rename` is refused there.
+     A per-sheet refusal doesn't undo the others, and the message says who took it and who didn't.
+- **Prompts.** `prompts/litrpg.md`, `prompts/litrpg_ad.md` and `prompts/multiplayer.md` now say: with several
+  characters every line starts with the character's name, unnamed lines change nothing, and `all:` is for what
+  the party earned together ("a shared victory's experience belongs to everyone who fought for it").
+  `prompt::PROMPT_VERSION` is 3 now, so chats already running rebuild their instructions.
+- **Code touched.** `rpg.rs`: `party_line`, `Rules::apply` split into `apply_party`/`apply_one`,
+  `Rules::names_character`, `Rules::say_whose` (the "no sheet for ''" refusal now lists the names);
+  `ad.rs`: `World::say_whose`, same refusal; `game.rs`: `default_character`, `unnamed_refusal`,
+  `apply_rpg(…, acted)` plus `&p.actions` at the call site. The Classic branch now goes through
+  `Rules::apply` (was `rpg::apply_line`) so party lines work there too. Classic shows a refused line to the
+  players as well as the GM (as it already did); AD keeps refusals for the System alone (item 73).
+- **Tests.** New: `rpg::tests::{all_prefixes_a_party_line, names_character_sees_the_sheets_own_names,
+  a_party_line_changes_every_character, a_party_line_refuses_a_rename,
+  an_unnamed_line_with_two_characters_says_whose_it_should_be, a_party_line_reaches_every_status_window,
+  the_system_too_asks_whose_line_it_is}` and
+  `game::tests::{experience_goes_to_the_character_who_acted,
+  an_unnamed_line_waits_for_a_name_when_two_characters_acted, a_named_line_still_picks_that_character,
+  a_solo_game_still_takes_unnamed_lines, the_system_too_gives_experience_to_the_one_who_acted}`.
+  `cargo test --lib`: **159 passed, 0 failed, 2 ignored**.
+- **Not shipped yet.** No version bump, no new installers: `installers/` still holds 3.0.2. Cutting 3.0.3 means
+  bumping the four version files (+ Android `tauri.properties` → `versionCode=3000003`), `npm run tauri build`,
+  the Android jniLibs fallback, then the hashes in this file and `README.md`.
+
