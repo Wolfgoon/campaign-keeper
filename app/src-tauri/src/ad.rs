@@ -1565,6 +1565,26 @@ impl Sheet {
         Ok(key)
     }
 
+    /// The System reshapes a species: the story has made them something the old one never was. The
+    /// tier they reached stands, and the new species' growth and traits apply from here on. The
+    /// System's decision, announced to the player.
+    pub fn change_species(&mut self, name: &str, defs: &Defs) -> Result<String, String> {
+        let key = defs.species_key(name).ok_or_else(|| format!("no species '{name}': define it first"))?;
+        if self.species == key {
+            return Err("that is already their species".into());
+        }
+        let was = std::mem::replace(&mut self.species, key.clone());
+        // A name earned by evolving through the old species belonged to that species, not this one.
+        self.names.remove("species");
+        let sp = defs.species(&key).cloned().unwrap_or(Value::Null);
+        let old = defs.species(&was).and_then(|v| v["name"].as_str()).unwrap_or("no species").to_string();
+        let shown = sp["name"].as_str().unwrap_or(&key).to_string();
+        let growth: Vec<String> = STATS.iter().filter(|s| num_of(&sp["growth"], s) != 0).map(|s| format!("{s} +{}", num_of(&sp["growth"], s))).collect();
+        let growth = if growth.is_empty() { "nothing on its own".to_string() } else { growth.join(", ") };
+        self.say(&format!("SPECIES CHANGE: {old} -> {shown}. Each level now also gives {growth}."));
+        Ok(key)
+    }
+
     /// Would this purchase make a tier past the last one (which the System names, not the player)?
     pub fn needs_tier_name(&self, what: &str, target: &str) -> bool {
         matches!(what, "class_tier" | "species_tier") || (what == "skill_tier" && self.skills.get(target).is_some_and(|s| s.tier >= SKILL_TIERS.len() - 1))
@@ -2091,6 +2111,18 @@ impl World {
                         format!("Class: {}", s.shown_name("class", None, defs))
                     }
                     _ => return Err("class needs: class offer <class>, class choose <class> once they pick it, or class change <class> to reshape it".into()),
+                }
+            }
+            // The story made them something else: the System reshapes the species they were born to.
+            // Tier-ups still go through `paths species …`; this is for becoming, not rising.
+            "species" => {
+                let (sub, arg) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
+                match sub.to_lowercase().as_str() {
+                    "change" | "swap" | "replace" | "set" | "become" => {
+                        s.change_species(arg, defs)?;
+                        format!("Species: {}", s.shown_name("species", None, defs))
+                    }
+                    _ => return Err("species needs: species change <species> to reshape it (a tier-up is still paths species … then choose)".into()),
                 }
             }
             "paths" => {
@@ -3104,5 +3136,29 @@ mod tests {
         assert!(w.apply_line("class offer scout", "Wren").unwrap_err().contains("class change"));
         assert!(w.apply_line("class change night shift", "Wren").unwrap_err().contains("already"));
         assert!(w.apply_line("class change nobody", "Wren").is_err());
+    }
+
+    #[test]
+    fn the_system_reshapes_a_species_the_story_has_outgrown() {
+        let mut w = world_with("Wren");
+        w.sheets.get_mut("Wren").unwrap().drain();
+        // The GM names its lines at a table, and a species change belongs to that character.
+        w.apply_line("define species night-born | Night-Born | Born of the dark between the stars. | growth HP 3, STR 2, INT 1, DEX 3", "Wren").unwrap();
+        assert!(w.defs.species("night-born").is_some(), "the System defined its own species");
+        let said = w.apply_line("Wren: species change night-born", "Wren").unwrap();
+        assert!(said.contains("SPECIES CHANGE") && said.contains("Night-Born"), "the player is told: {said}");
+        let d = w.defs.clone();
+        let s = &w.sheets["Wren"];
+        assert_eq!(s.species, "night-born");
+        assert_eq!(s.species_tier, 0, "the tier they reached stands");
+        // The new species' growth replaces the old one's: human's 2/1/2/1 is gone.
+        assert_eq!(s.growth(&d)["HP"], 3);
+        assert_eq!(s.growth(&d)["DEX"], 3);
+        assert_eq!(sheet_view(s, &d)["species"], "Night-Born", "the sheet shows what they are now");
+        // Saying it twice changes nothing; an undefined species is named as the problem.
+        assert!(w.apply_line("species change night-born", "Wren").unwrap_err().contains("already"));
+        assert!(w.apply_line("species change nobody", "Wren").is_err());
+        // Rising a tier is still `paths species`: this line is for becoming, not rising.
+        assert!(w.apply_line("species offer night-born", "Wren").is_err());
     }
 }

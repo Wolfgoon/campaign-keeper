@@ -1,7 +1,7 @@
-# Handoff: Campaign Keeper 3.0.4 (Windows; AI Game Master, AD System, serverless multiplayer)
+# Handoff: Campaign Keeper 3.0.5 (Windows; AI Game Master, AD System, serverless multiplayer)
 
 Repo: `C:\Users\patri\OneDrive\Documents\GitHub\campaign-keeper` (Tauri 2 + Svelte 5 + Rust). Windows, PowerShell.
-Everything described here is committed and pushed to `main` (latest version: 3.0.4, Windows exe only — the
+Everything described here is committed and pushed to `main` (latest version: 3.0.5, Windows exe only — the
 Android APK is still 3.0.2). Start with **Still to do** at the bottom of the version sections.
 
 ## What was done
@@ -142,10 +142,11 @@ older commits from P-Hoep (`ea9a3fc`, `878ca4c`, `4b1d5dc` "deepseeks"), so it w
 4. Not tested by hand yet: turn the rules on in a campaign that has already begun, and check that the GM asks the
    table what the world calls its words (`<world_words>`), that the answers land on the panel and in `<rpg>`
    lines, and that `rename settled` or the panel's "✔ The words are settled" button ends the asking.
-5. Not tested by hand yet: have the GM define a class of its own (`define class …`) and reshape one with
-   `class change …` at a table with two characters, and check the log says `CLASS CHANGE: … -> …` and that
-   the new growth applies at the next level. The lines work in `ad::tests` and `game::tests`; the live table
-   has only seen the 3.0.3 build, where they were refused.
+5. Not tested by hand yet: have the GM define a class or a species of its own (`define class …`,
+   `define species …`) and reshape one with `class change …` / `species change …` at a table with two
+   characters, and check the log says `CLASS CHANGE: … -> …` / `SPECIES CHANGE: … -> …` and that the new
+   growth applies at the next level. The lines work in `ad::tests` and `game::tests`; the live table has
+   only seen up to the 3.0.3 build, where the define was refused.
 
 ## Android build command (for next time)
 ```
@@ -349,4 +350,44 @@ has one.
   before the `Aria: rename settled` change and then replaced by this one; commit 0565144's message quotes the
   first hash.)
 - **Android is still 3.0.2** and does not have any of the 3.0.3/3.0.4 fixes.
+
+## Fix after 3.0.4: a species could be evolved, never reshaped (2026-11-21)
+
+`class change` let the System reshape a class, but a species could only ever rise a tier: `paths species`
+(when `can_evolve_species`, i.e. level 25 at base) and a 1-in-10,000 feat. A character the story turned into
+something else mid-campaign — bitten, reborn, remade — had nothing to write, so the GM either left the sheet
+wrong or explained the app away, which is the same failure 3.0.4 fixed for classes.
+
+- **`Sheet::change_species`**, behind `species change|swap|replace|set|become <species>` (a `species` verb now
+  exists in `World::apply_line`; `species offer` is still refused with a pointer at `paths species`). The
+  species tier they reached stands, the new species' `growth` applies from the next level, its `stats` apply
+  at once through `true_stat`, a path-name earned through the old species is dropped, and the player is told
+  `[System] SPECIES CHANGE: Human -> Night-Born. Each level now also gives HP +3, STR +2, DEX +3.`
+  Undefined species are told so: `no species 'x': define it first` — `define species` already worked and now
+  has a worked example in the prompt.
+- **Prompt** (`litrpg_ad.md`): the **YOU ARE THE SYSTEM** line now says "reshape a class or a species", the
+  `<rpg>` example carries `species change night-born` and a `define species` line, and a new bullet spells out
+  that reshapes are for *what the story made them*, while tier-ups stay `paths species` + the player's
+  `choose`. `prompt::PROMPT_VERSION` is 5 (it was 4 in 3.0.4), so running chats rebuild the GM's instructions
+  on their next turn.
+- **Tests.** New `ad::tests::the_system_reshapes_a_species_the_story_has_outgrown` — `define species` with a
+  name in front, `Wren: species change night-born`, `SPECIES CHANGE` in the log, tier still 0, growth now
+  `HP 3 / DEX 3` instead of human's, the sheet view showing `Night-Born`, "already their species" and an
+  undefined species refused, and `species offer` still refused. `cargo test --lib`: **163 passed, 0 failed,
+  2 ignored**.
+- **Nothing to migrate**: same save format; a running campaign can reshape a species the moment 3.0.5 is
+  installed (the GM's instructions rebuild on its next turn because of the prompt version bump).
+- **Shipped for Windows as 3.0.5** (2026-11-21), exe only — 3.0.4 had already been pushed, so its binary was
+  left alone rather than rebuilt under the same number. Bumped to 3.0.5 in `app/package.json`,
+  `app/src-tauri/Cargo.toml`, `app/src-tauri/Cargo.lock` and `app/src-tauri/tauri.conf.json`;
+  `cd app; npm run tauri build` gave `installers/Campaign Keeper Setup 3.0.5.exe` — 7,321,957 bytes,
+  ProductVersion and FileVersion 3.0.5, SHA-256
+  `59c7d217e14e53026c03181a65831db86d57ce0496cf90378d22e90ed605bab0`, copied from
+  `app/src-tauri/target/release/bundle/nsis/Campaign Keeper_3.0.5_x64-setup.exe`. The binary carries it
+  (`SPECIES CHANGE`, `species change night-born`, `define species night-born`, `that is already their species`,
+  `YOU ARE THE SYSTEM`, `CLASS CHANGE` are in it). `dist/` rebuilt to the same `index-C1R1GU3f.js` (no UI
+  change). `README.md`'s download table and `How to install.txt` point at the 3.0.5 file; the 3.0.4 file stays
+  in `installers/` for anyone who already has it.
+- **Android is still 3.0.2** and has none of the 3.0.3/3.0.4/3.0.5 fixes.
+
 
