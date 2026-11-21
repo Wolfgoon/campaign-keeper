@@ -774,8 +774,9 @@ fn default_character(rules: &Rules, acted: &[(String, String)]) -> String {
 
 /// An unnamed line needs a single character it can belong to. With several at the table, guessing
 /// picked one sheet for everyone (the host's, as often as not), so the line waits for a name instead.
+/// The System's own lines (`define …`, `rename …`, the crafting sums) belong to the world, not a sheet.
 fn unnamed_refusal(rules: &Rules, line: &str, default: &str) -> Option<String> {
-    if !default.is_empty() || rpg::party_line(line).is_some() || rules.names_character(line) {
+    if !default.is_empty() || rpg::party_line(line).is_some() || rpg::world_line(line) || rules.names_character(line) {
         return None;
     }
     let mut names = rules.names();
@@ -968,6 +969,22 @@ mod tests {
         assert_eq!(s.rules.sheets["Bram"].money, 5);
         let notices = &s.session.rpg_notices;
         assert!(notices.iter().any(|n| n.contains("Aria") && n.contains("Bram")), "{notices:?}");
+    }
+
+    #[test]
+    fn the_systems_own_lines_need_no_name_at_a_table() {
+        // `define` changes the whole world, so it is never a guess between characters.
+        let (mut s, d) = state(&[]);
+        s.rules.enabled = true;
+        s.rules.ruleset = "ad".into();
+        for n in ["Aria", "Bram"] {
+            s.rules.ensure_sheet(n);
+        }
+        let reply = "<rpg>\ndefine class night shift | Night Shift | Never lost in a building. | growth HP 2, STR 1, INT 2, DEX 1\n</rpg>";
+        let parsed = tags::parse(reply);
+        let mut e = Entry::text("assistant", reply);
+        apply_rpg(&d, &mut s, &parsed, &mut e, &[("Aria".into(), "a".into()), ("Bram".into(), "b".into())]).unwrap();
+        assert!(s.rules.ad.defs.class("night_shift").is_some(), "{:?}", s.session.rpg_notices);
     }
 
     #[test]

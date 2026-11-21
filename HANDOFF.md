@@ -1,7 +1,7 @@
-# Handoff: Campaign Keeper 3.0.3 (Windows; AI Game Master, AD System, serverless multiplayer)
+# Handoff: Campaign Keeper 3.0.4 (Windows; AI Game Master, AD System, serverless multiplayer)
 
 Repo: `C:\Users\patri\OneDrive\Documents\GitHub\campaign-keeper` (Tauri 2 + Svelte 5 + Rust). Windows, PowerShell.
-Everything described here is committed and pushed to `main` (latest version: 3.0.3, Windows exe only — the
+Everything described here is committed and pushed to `main` (latest version: 3.0.4, Windows exe only — the
 Android APK is still 3.0.2). Start with **Still to do** at the bottom of the version sections.
 
 ## What was done
@@ -142,6 +142,10 @@ older commits from P-Hoep (`ea9a3fc`, `878ca4c`, `4b1d5dc` "deepseeks"), so it w
 4. Not tested by hand yet: turn the rules on in a campaign that has already begun, and check that the GM asks the
    table what the world calls its words (`<world_words>`), that the answers land on the panel and in `<rpg>`
    lines, and that `rename settled` or the panel's "✔ The words are settled" button ends the asking.
+5. Not tested by hand yet: have the GM define a class of its own (`define class …`) and reshape one with
+   `class change …` at a table with two characters, and check the log says `CLASS CHANGE: … -> …` and that
+   the new growth applies at the next level. The lines work in `ad::tests` and `game::tests`; the live table
+   has only seen the 3.0.3 build, where they were refused.
 
 ## Android build command (for next time)
 ```
@@ -297,4 +301,49 @@ Reported from a real table: "all the xp only goes to the host's stats."
   `gen/android/app/tauri.properties` as `versionCode=3000003`.
 - `README.md`'s download table and `How to install.txt` now point at the Windows 3.0.3 file; the Android rows
   stay on 3.0.2 until that APK is cut.
+
+## Fix after 3.0.3: the System could not define a class (2026-11-21)
+
+Reported from a live AD table — "the gm can not offer classes or anything". The GM had written
+`Paul: define class night shift | Night Shift | ...` and got `Refused: … (unknown change 'define')`, then
+told the player the app only allows the six built-in classes. It never could: the class it wanted for Paul
+was the one the story had made him, and `class offer`/`class choose` both refuse a character who already
+has one.
+
+- **Cause.** `ad::World::apply_line` recognised `define`, `rename` and the crafting sums (`lens`, `crystal`,
+  `impurity`, `battery`) only as the **first word** of a line. They are world lines and need no character,
+  but at a table the GM names every line (that is what the 3.0.3 prompt asks for), so a name in front made
+  them fall through to the per-character verbs and fail. `game::unnamed_refusal` refused an unnamed `define`
+  the same way: it treated every line as a character's change.
+- **Fix.** Those lines are now `World::system_line`, tried on the raw line **and again with the character's
+  name taken off**, so `define …` and `Paul: define …` are the same world change. New `rpg::world_line`
+  (`define`, `rename`, `lens`, `crystal`, `impurity`, `battery`) tells `game::unnamed_refusal` which lines
+  belong to the world and never wait for a name.
+- **More System control: `class change <class>`.** `Sheet::change_class` (verbs
+  `class change|swap|replace|reclass|set`) reshapes the class a character holds: the tier they earned
+  stands, the old class's skills stay learnt, the new class's growth applies from the next level, and the
+  player is told in the log (`[System] CLASS CHANGE: Survivor -> Night Shift. Each level now also gives …`).
+  `offer_class`'s refusal now points at it.
+- **Prompt.** `prompts/litrpg_ad.md`: new **YOU ARE THE SYSTEM** section (you are the System, not a human
+  referee borrowed for the evening; define, offer and reshape freely; never tell the table the app won't let
+  you, and never explain an `<rpg_notice>` to them — fix the line next turn). The `class offer` bullet now
+  carries a worked `define class …` and the `class change` rule, plus a bullet saying world lines need no
+  name. `prompt::PROMPT_VERSION` is 4, so running chats rebuild the GM's instructions on their next turn.
+- **Tidy.** `Class chosen: Forager (null).` no longer says the System's word "null" for the first tier.
+- **Tests.** New: `ad::tests::{the_system_lines_work_with_a_character_named_first,
+  the_system_reshapes_a_class_the_story_has_outgrown}`,
+  `game::tests::the_systems_own_lines_need_no_name_at_a_table`. `cargo test --lib`: **162 passed, 0 failed,
+  2 ignored**.
+- **The running campaign needs nothing**: the file format is unchanged, so old `rpg.json` files load as they
+  are, and the GM can now define *night shift* and shift Paul's class in the game already in progress.
+- **Shipped for Windows as 3.0.4** (2026-11-21), exe only. Bumped to 3.0.4 in `app/package.json`,
+  `app/src-tauri/Cargo.toml`, `app/src-tauri/Cargo.lock` and `app/src-tauri/tauri.conf.json`.
+  `cd app; npm run tauri build` gave `installers/Campaign Keeper Setup 3.0.4.exe` — 7,330,587 bytes,
+  ProductVersion and FileVersion 3.0.4, SHA-256
+  `864eea206b24a31b66481c5392a5875726562b86c52ee95d1a9b10d9de3fb569`, copied from
+  `app/src-tauri/target/release/bundle/nsis/Campaign Keeper_3.0.4_x64-setup.exe`. The binary carries the fix
+  (`YOU ARE THE SYSTEM`, `class change <class>`, `CLASS CHANGE`, `reshapes the one they hold` are in it).
+  `dist/` rebuilt to the same `index-C1R1GU3f.js` (no UI change). `README.md`'s download table and
+  `How to install.txt` point at the 3.0.4 file.
+- **Android is still 3.0.2** and does not have any of the 3.0.3/3.0.4 fixes.
 

@@ -1517,7 +1517,7 @@ impl Sheet {
     /// The System offers a class (Spirit offers the built-in ones whose skill requirements are met).
     pub fn offer_class(&mut self, key: &str, defs: &Defs) -> Result<String, String> {
         if self.cls.is_some() {
-            return Err("they already have a class".into());
+            return Err("they already have a class (class change <class> reshapes the one they hold)".into());
         }
         let key = defs.class_key(key).ok_or_else(|| format!("no class '{key}': define it first"))?;
         if !self.offered.contains(&key) {
@@ -1537,9 +1537,32 @@ impl Sheet {
         self.cls = Some(key.clone());
         let c = defs.class(&key).cloned().unwrap_or(Value::Null);
         let growth: Vec<String> = STATS.iter().filter(|s| num_of(&c["growth"], s) != 0).map(|s| format!("{s} +{}", num_of(&c["growth"], s))).collect();
-        self.say(&format!("Class chosen: {} ({}). Each level now also gives {}.", c["name"].as_str().unwrap_or(&key), CLASS_TIERS[self.class_tier], growth.join(", ")));
+        // The first tier is the System's "null": saying it in a notification only confuses.
+        let tier = if self.class_tier == 0 { String::new() } else { format!(" ({})", CLASS_TIERS[self.class_tier]) };
+        self.say(&format!("Class chosen: {}{tier}. Each level now also gives {}.", c["name"].as_str().unwrap_or(&key), growth.join(", ")));
         self.check_slots(defs);
         Ok(())
+    }
+
+    /// The System reshapes a class: life has made them something other than what their class says.
+    /// The tier they earned stands, the old class's skills stay learnt, and the new class's growth
+    /// and skills apply from here on. The System's decision, announced to the player.
+    pub fn change_class(&mut self, name: &str, defs: &Defs) -> Result<String, String> {
+        let key = defs.class_key(name).ok_or_else(|| format!("no class '{name}': define it first"))?;
+        if self.cls.as_deref() == Some(key.as_str()) {
+            return Err("that is already their class".into());
+        }
+        let was = self.cls.replace(key.clone());
+        // A name earned by rising through the old class belonged to that class, not this one.
+        self.names.remove("class");
+        let c = defs.class(&key).cloned().unwrap_or(Value::Null);
+        let old = was.as_deref().and_then(|w| defs.class(w)).and_then(|v| v["name"].as_str()).unwrap_or("no class").to_string();
+        let growth: Vec<String> = STATS.iter().filter(|s| num_of(&c["growth"], s) != 0).map(|s| format!("{s} +{}", num_of(&c["growth"], s))).collect();
+        let shown = c["name"].as_str().unwrap_or(&key).to_string();
+        let growth = if growth.is_empty() { "nothing on its own".to_string() } else { growth.join(", ") };
+        self.say(&format!("CLASS CHANGE: {old} -> {shown}. Each level now also gives {growth}."));
+        self.check_slots(defs);
+        Ok(key)
     }
 
     /// Would this purchase make a tier past the last one (which the System names, not the player)?
@@ -1945,24 +1968,38 @@ impl World {
         }
     }
 
+    /// The System's own lines: they change the world, not a character, so they need no sheet. A name
+    /// in front of one is only decoration — `Paul: define class night shift` is the same change as
+    /// `define class night shift`, and the GM names its lines.
+    fn system_line(&mut self, cmd: &str) -> Option<Result<String, String>> {
+        let (verb0, _) = cmd.split_once(char::is_whitespace).unwrap_or((cmd, ""));
+        let low = verb0.to_lowercase();
+        // Defining things is for everyone at once; no character needed.
+        if low == "define" {
+            return Some(self.define(cmd[verb0.len()..].trim()));
+        }
+        if low == "rename" {
+            return Some(self.rename(cmd[verb0.len()..].trim()));
+        }
+        ["lens", "crystal", "impurity", "battery"].contains(&low.as_str()).then(|| crafting_calc(&self.unlabel(cmd)).map(|m| format!("{SYSTEM_ONLY}{m}")))
+    }
+
     /// One change the System asked for, in an `<rpg>` line.
     pub fn apply_line(&mut self, line: &str, default_char: &str) -> Result<String, String> {
         let line = line.trim().trim_start_matches('-').trim();
-        let (verb0, _) = line.split_once(char::is_whitespace).unwrap_or((line, ""));
-        // Defining things is for everyone at once; no character needed.
-        if verb0.eq_ignore_ascii_case("define") {
-            return self.define(line[verb0.len()..].trim());
-        }
-        if verb0.eq_ignore_ascii_case("rename") {
-            return self.rename(line[verb0.len()..].trim());
-        }
-        if ["lens", "crystal", "impurity", "battery"].contains(&verb0.to_lowercase().as_str()) {
-            return crafting_calc(&self.unlabel(line)).map(|m| format!("{SYSTEM_ONLY}{m}"));
+        if let Some(r) = self.system_line(line) {
+            return r;
         }
         let (who, cmd) = match line.split_once(':') {
             Some((a, b)) if !a.trim().is_empty() && self.sheet_key(a).is_some() => (a.trim().to_string(), b.trim()),
             _ => (default_char.to_string(), line),
         };
+        // The same world lines again, now that a character's name is off the front.
+        if cmd != line {
+            if let Some(r) = self.system_line(cmd) {
+                return r;
+            }
+        }
         let key = self.sheet_key(&who).ok_or_else(|| if who.trim().is_empty() { self.say_whose() } else { format!("no sheet for '{who}'") })?;
         let (verb_raw, rest) = cmd.split_once(char::is_whitespace).unwrap_or((cmd, ""));
         // The line's own word too: after `rename class -> Calling`, `Calling offer …` is the same line.
@@ -2048,7 +2085,12 @@ impl World {
                         s.choose_class(arg, defs)?;
                         format!("Class: {}", s.shown_name("class", None, defs))
                     }
-                    _ => return Err("class needs: class offer <class>, or class choose <class> once they pick it".into()),
+                    // The story made them something else: the System reshapes the class they hold.
+                    "change" | "swap" | "replace" | "reclass" | "set" => {
+                        s.change_class(arg, defs)?;
+                        format!("Class: {}", s.shown_name("class", None, defs))
+                    }
+                    _ => return Err("class needs: class offer <class>, class choose <class> once they pick it, or class change <class> to reshape it".into()),
                 }
             }
             "paths" => {
@@ -3023,5 +3065,44 @@ mod tests {
         let shown: Vec<String> = v["spectrums"].as_array().unwrap().iter().map(|x| x["number"].as_str().unwrap().to_string()).collect();
         assert_eq!(shown, w.sheets["Wren"].prism.held.iter().map(|p| label(*p)).collect::<Vec<_>>());
         assert!(!v.to_string().contains("System only"));
+    }
+
+    #[test]
+    fn the_system_lines_work_with_a_character_named_first() {
+        // The GM names its lines, and `Paul: define class ...` is still the world's change, not a
+        // character's: it used to come back "unknown change 'define'" and the class could not exist.
+        let mut w = world_with("Wren");
+        let r = w.apply_line("Wren: define class night shift | Night Shift | Never lost in a building. | growth HP 2, STR 1, INT 2, DEX 1", "Wren").unwrap();
+        assert!(r.starts_with(SYSTEM_ONLY), "{r}");
+        assert!(w.defs.class("night_shift").is_some());
+        assert!(w.apply_line("Wren: class offer night shift", "Wren").unwrap().contains("Night Shift"));
+        w.apply_line("Wren: class choose night shift", "Wren").unwrap();
+        assert_eq!(w.sheets["Wren"].cls.as_deref(), Some("night_shift"));
+        // A rename with a name in front of it renames the world just the same.
+        assert!(w.apply_line("Wren: rename amplitude -> Aether", "Wren").is_ok());
+        assert_eq!(w.labels["amplitude"], "Aether");
+        // The crafting sums too.
+        assert!(w.apply_line("Wren: impurity 6.25 7", "Wren").unwrap().contains("75%"));
+    }
+
+    #[test]
+    fn the_system_reshapes_a_class_the_story_has_outgrown() {
+        let mut w = world_with("Wren");
+        w.apply_line("class offer survivor", "Wren").unwrap();
+        w.apply_line("class choose survivor", "Wren").unwrap();
+        w.sheets.get_mut("Wren").unwrap().drain();
+        w.apply_line("define class night shift | Night Shift | Never lost in a building. | growth HP 2, STR 1, INT 2, DEX 1", "Wren").unwrap();
+        let said = w.apply_line("class change night shift", "Wren").unwrap();
+        assert!(said.contains("CLASS CHANGE") && said.contains("Night Shift"), "the player is told: {said}");
+        let d = w.defs.clone();
+        let s = &w.sheets["Wren"];
+        assert_eq!(s.cls.as_deref(), Some("night_shift"));
+        assert_eq!(s.class_tier, 0, "the tier they earned stands");
+        // The new class's growth applies from the next level: human 2/1/2/1 plus 2/1/2/1.
+        assert_eq!(s.growth(&d)["HP"], 4);
+        // Offering, rather than shifting, still waits for the player to have no class.
+        assert!(w.apply_line("class offer scout", "Wren").unwrap_err().contains("class change"));
+        assert!(w.apply_line("class change night shift", "Wren").unwrap_err().contains("already"));
+        assert!(w.apply_line("class change nobody", "Wren").is_err());
     }
 }

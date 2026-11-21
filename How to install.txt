@@ -3,7 +3,7 @@ Campaign Keeper: how to install
 PLAYING TOGETHER: everyone at a table needs version 3.0 or later (or a
 web browser). An older app is told to update when it tries to join.
 
-ON WINDOWS: "Campaign Keeper Setup 3.0.3.exe"
+ON WINDOWS: "Campaign Keeper Setup 3.0.4.exe"
   Double-click it. If Windows says "Windows protected your PC", click
   "More info", then "Run anyway". Click Install: it installs just for you
   (no administrator needed), adds Start menu and desktop shortcuts, and

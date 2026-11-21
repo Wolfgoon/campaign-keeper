@@ -421,6 +421,15 @@ pub fn party_line(line: &str) -> Option<&str> {
     })
 }
 
+/// A line that changes the System itself and belongs to no character: `define …`, `rename …`, and
+/// the crafting sums (`lens`, `crystal`, `impurity`, `battery`). Such a line may stand alone, and a
+/// character's name in front of it changes nothing — the GM names its lines.
+pub fn world_line(line: &str) -> bool {
+    let t = line.trim().trim_start_matches('-').trim();
+    let verb = t.split_once(char::is_whitespace).map_or(t, |(v, _)| v).to_lowercase();
+    ["define", "rename", "lens", "crystal", "impurity", "battery"].contains(&verb.as_str())
+}
+
 impl Rules {
     pub fn is_ad(&self) -> bool {
         self.ruleset == "ad"
