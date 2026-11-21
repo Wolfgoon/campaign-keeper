@@ -76,6 +76,12 @@ How sync decides: it compares this device's files, the account's copy, and what 
 
 A small Referee model judges the difficulty band, circumstances and stakes; `rpg.rs` does all the arithmetic. The same subject and skill keep their first ruling, so asking again can't get an easier one. There is no random number generator in the game. The only randomness in the app is the OS generator making join codes and memory ids, which never touch play.
 
+## The world's own words
+
+The AD System's vocabulary belongs to the GM, who fits it to the story: `rename amplitude -> Aether`, `rename skills -> Talents`, `rename class -> Calling`, and the rest of the list in `prompts/litrpg_ad.md`. Only the shown name changes — every number and ruling stays. The status window, the player's sheet and the panel's own headings all print the new words, and a renamed word works as a keyword in `<rpg>` lines too (`Calling offer forager`).
+
+When the rules are turned on in a world that has already begun, the app tells the GM so in `<world_words>`, and the GM must ask the table what this world calls those things before the scene goes on. It then writes the `rename` lines itself. Classic asks in its own words (attributes, HP, Stamina, Mana, Money, skills), the AD System in its own. `rename settled` (or the "The words are settled" button in the status panel) ends the asking when the table keeps the sheet's words.
+
 ## Memory
 
 - Live database: on this computer, outside any synced folder. `.keeper/memory-backup.jsonl` travels with the campaign, and the database rebuilds from it.

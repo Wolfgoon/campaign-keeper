@@ -17,6 +17,20 @@ use crate::util::atomic_write;
 
 pub const ATTRIBUTES: [&str; 6] = ["Might", "Agility", "Endurance", "Intellect", "Insight", "Presence"];
 
+/// What the GM is told when the rules came on after the story had already begun (Classic): the
+/// sheet's words were never fitted to this world, so it must ask the table before it uses them.
+pub const TERMS_ASK: &str = "\
+The rules have only now come to a story already in motion, so the sheet's words were never fitted \
+to it. Ask the table before you carry the scene on. In one short message, in the story's voice, ask \
+what this world calls each of these, and offer a name of your own for each: the six attributes \
+(Might, Agility, Endurance, Intellect, Insight, Presence), HP, Stamina, Mana, Money, and the skills \
+their character has.
+End your reply there, with the scene waiting. When they answer — or leave a word as it is — write \
+the `rename` lines in <rpg> (`rename stat HP -> Vigour`, `rename skill Observation -> Reading \
+Signs`) and carry on in their words; use them from then on. If they keep the sheet's words as they \
+are, write `rename settled` instead. If the table has already answered this in a recent turn, do \
+that now and don't ask again.";
+
 pub const BANDS: [(&str, i32); 8] = [
     ("trivial", 6),
     ("easy", 10),
@@ -393,6 +407,9 @@ pub struct Rules {
     /// Which rules: "" is Classic (this file), "ad" is the AD System (`ad.rs`, Spirit's rules).
     pub ruleset: String,
     pub ad: crate::ad::World,
+    /// The System came on after the story had begun: it still has to ask the table what this world
+    /// calls its words. Cleared when it renames something, or when the host settles the words.
+    pub terms_pending: bool,
 }
 
 impl Rules {
@@ -422,7 +439,15 @@ impl Rules {
 
     /// One `<rpg>` line, under whichever rules this game uses.
     pub fn apply(&mut self, line: &str, default_char: &str) -> Result<String, String> {
-        if self.is_ad() {
+        let low = line.trim_start_matches('-').trim().to_ascii_lowercase();
+        // The table kept the sheet's words: nothing changes, and the asking ends.
+        if matches!(low.as_str(), "rename settled" | "words settled" | "settle words") {
+            self.terms_pending = false;
+            self.log.push("the words are settled".into());
+            return Ok("the words are settled".into());
+        }
+        let renaming = low.starts_with("rename");
+        let r = if self.is_ad() {
             let r = self.ad.apply_line(line, default_char).map(|m| crate::ad::relabel(&m, &self.ad.labels));
             if let Ok(m) = &r {
                 self.log.push(m.trim_start_matches(crate::ad::SYSTEM_ONLY).to_string());
@@ -430,7 +455,12 @@ impl Rules {
             r
         } else {
             apply_line(self, line, default_char)
+        };
+        // It has fitted its words to the world (`rename settled` never reaches here).
+        if renaming && r.is_ok() {
+            self.terms_pending = false;
         }
+        r
     }
 
     /// A character joining the table gets a blank sheet under the rules in use.
@@ -452,8 +482,14 @@ impl Rules {
             let k = self.ad.sheet_key(character)?;
             let mut v = crate::ad::sheet_view(&self.ad.sheets[&k], &self.ad.defs);
             crate::ad::relabel_value(&mut v, &self.ad.labels);
-            // the panel names the stats by these
-            v["labels"] = serde_json::json!(crate::ad::STATS.iter().map(|s| (s.to_string(), crate::ad::relabel(s, &self.ad.labels))).collect::<BTreeMap<_, _>>());
+            // The derived stats are the System's words too: amplitude -> Aether.
+            if let Some(d) = v.get_mut("derived").and_then(Value::as_object_mut) {
+                let named: serde_json::Map<String, Value> =
+                    d.iter().map(|(n, x)| (crate::ad::relabel(n, &self.ad.labels), x.clone())).collect();
+                *d = named;
+            }
+            // The panel names its own headings and stats by these (lowercase keys).
+            v["labels"] = serde_json::json!(crate::ad::panel_labels(&self.ad.labels));
             Some(v)
         } else {
             self.sheets.iter().find(|(k, _)| k.eq_ignore_ascii_case(character)).and_then(|(_, v)| serde_json::to_value(v).ok())
@@ -1259,6 +1295,49 @@ mod tests {
         assert_eq!(s.skills["Sword"].rank, 6);
         assert_eq!(s.inventory[0].bonuses["Sword"], 3);
         assert_eq!((s.attribute_points, s.skill_points), (0, 0));
+    }
+
+    fn ad_rules() -> Rules {
+        let mut r = Rules { enabled: true, ruleset: "ad".into(), ..Default::default() };
+        let base = crate::ad::STATS.iter().map(|s| (s.to_string(), 10)).collect();
+        let s = crate::ad::Sheet::new("Wren", "human", base, &r.ad.defs);
+        r.ad.sheets.insert("Wren".into(), s);
+        r
+    }
+
+    #[test]
+    fn the_gm_names_the_system_and_the_asking_stops() {
+        let mut r = ad_rules();
+        // The rules came on after the story had begun, so the words aren't the world's yet.
+        r.terms_pending = true;
+        assert_eq!(r.view("Wren").unwrap()["labels"], serde_json::json!({}));
+        assert!(r.apply("rename skills -> Talents", "Wren").is_ok());
+        assert!(!r.terms_pending, "a rename means the words were settled");
+        let v = r.view("Wren").unwrap();
+        assert_eq!(v["labels"]["skills"], "Talents");
+        // "Keep the System's words as they are" settles it too, without touching a name.
+        r.terms_pending = true;
+        assert!(r.apply("rename settled", "Wren").is_ok());
+        assert!(!r.terms_pending);
+        assert_eq!(r.view("Wren").unwrap()["labels"]["skills"], "Talents");
+        // A line the rules refuse settles nothing.
+        r.terms_pending = true;
+        assert!(r.apply("rename skills ->", "Wren").is_err());
+        assert!(r.terms_pending);
+    }
+
+    #[test]
+    fn keeping_the_sheets_words_settles_the_ask_under_either_ruleset() {
+        let mut r = rules();
+        r.terms_pending = true;
+        assert!(r.apply("rename settled", "Wren").is_ok());
+        assert!(!r.terms_pending);
+        // A real rename settles it too, and only when the rules accept it.
+        r.terms_pending = true;
+        assert!(r.apply("rename stat Luck -> Fate", "Wren").is_err());
+        assert!(r.terms_pending);
+        assert!(r.apply("rename stat Might -> Grit", "Wren").is_ok());
+        assert!(!r.terms_pending);
     }
 
     #[test]

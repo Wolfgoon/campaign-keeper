@@ -509,6 +509,12 @@ fn compose_user_turn(app: &AppHandle, st: &Shared, p: &Pending, cfg: &Config, di
     if s.rules.enabled && s.rules.has_sheets() {
         blocks.push(format!("<status_window>\n{}\n</status_window>", s.rules.status_all()));
     }
+    // The rules came on after the story had begun: the words on the sheet were never fitted to this
+    // world, so the GM must ask the table what to call them before it uses them.
+    if s.rules.enabled && s.rules.terms_pending {
+        let ask = if s.rules.is_ad() { crate::ad::TERMS_ASK } else { rpg::TERMS_ASK };
+        blocks.push(format!("<world_words>\n{ask}\n</world_words>"));
+    }
     if !s.session.rpg_notices.is_empty() {
         blocks.push(format!("<rpg_notice>\n{}\n</rpg_notice>", s.session.rpg_notices.join("\n")));
         s.session.rpg_notices.clear();

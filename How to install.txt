@@ -3,14 +3,14 @@ Campaign Keeper: how to install
 PLAYING TOGETHER: everyone at a table needs version 3.0 or later (or a
 web browser). An older app is told to update when it tries to join.
 
-ON WINDOWS: "Campaign Keeper Setup 3.0.0.exe"
+ON WINDOWS: "Campaign Keeper Setup 3.0.2.exe"
   Double-click it. If Windows says "Windows protected your PC", click
   "More info", then "Run anyway". Click Install: it installs just for you
   (no administrator needed), adds Start menu and desktop shortcuts, and
   can be removed in Settings > Apps. When Windows Firewall asks, allow
   Campaign Keeper on private networks so friends can join your games.
 
-ON AN ANDROID PHONE OR TABLET: "Campaign Keeper 3.0.0 (Android).apk"
+ON AN ANDROID PHONE OR TABLET: "Campaign Keeper 3.0.2 (Android).apk"
   Open the file on the device. Android asks whether to allow installing
   apps from your browser or files app: allow it, then tap Install. If
   Play Protect asks, choose "Install anyway". On Android the GM runs on

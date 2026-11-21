@@ -1720,6 +1720,10 @@ pub fn renamable() -> Vec<String> {
         "HP", "STR", "INT", "DEX", "Health", "Strength", "Intelligence", "Dexterity", "amplitude", "speed", "stamina", "frequency", "frequencies",
         "spectrum", "spectrums", "soul prism", "semi skill", "semi skills", "base frequency", "unbalanced environment", "overpower", "world hoppers",
         "world hopper", "alien zone", "alien zones", "experience", "level", "bonus points", "System",
+        // What the status panel and the rules' own lines call things, so the world's words reach
+        // the screen as well: a class that is a Calling, skills that are Talents.
+        "species", "class", "classes", "skill", "skills", "path", "paths", "feat", "feats", "title", "titles",
+        "condition", "conditions", "inventory", "money",
     ]
     .iter()
     .map(|s| s.to_string())
@@ -1758,6 +1762,36 @@ pub fn relabel(text: &str, labels: &BTreeMap<String, String>) -> String {
     .into_owned()
 }
 
+/// The story's names for the words the status panel writes itself ("Skills", "money",
+/// "HP"), keyed lowercase. Only words actually renamed are listed; the panel prints its own
+/// heading for the rest. This is what lets a GM's word reach the screen, not just the story.
+pub fn panel_labels(labels: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+    if labels.is_empty() {
+        return BTreeMap::new();
+    }
+    renamable()
+        .into_iter()
+        .filter_map(|t| {
+            let named = relabel(&t, labels);
+            (named != t).then(|| (t.to_lowercase(), named))
+        })
+        .collect()
+}
+
+/// What the System is told when the rules came on after the story had already begun: its words
+/// were never fitted to this world, so it has to ask the table before it uses them.
+pub const TERMS_ASK: &str = "\
+The System has only now come to a world already in motion, so its words were never fitted to it. \
+Ask the table before you carry the scene on. In one short message, in the System's voice, ask what \
+this world calls each of these, and offer a name of your own for each:
+  level, experience and bonus points; species and classes, with their tiers; the four stats HP, STR, \
+INT and DEX; amplitude, speed and stamina; frequency, spectrum, soul prism and semi skills; skills, \
+paths and feats; the System itself.
+End your reply there, with the scene waiting. When they answer — or leave a word as it is — write \
+the `rename` lines in <rpg> and carry on in their words; use them from then on. If they keep the \
+System's words as they are, write `rename settled` instead. If the table has already answered this \
+in a recent turn and you haven't written the renames yet, do that now and don't ask again.";
+
 /// Every string in a view, in the story's own words.
 pub fn relabel_value(v: &mut Value, labels: &BTreeMap<String, String>) {
     match v {
@@ -1781,6 +1815,10 @@ impl World {
     fn rename(&mut self, t: &str) -> Result<String, String> {
         let t = t.trim();
         let t = t.strip_prefix("term ").or_else(|| t.strip_prefix("word ")).unwrap_or(t);
+        // The table kept the System's words, so there is nothing to rename: the line only settles it.
+        if t.eq_ignore_ascii_case("settled") || t.eq_ignore_ascii_case("done") || t.eq_ignore_ascii_case("none") {
+            return Ok("the words are settled".into());
+        }
         let (old, new) = t.split_once("->").ok_or("rename needs: rename amplitude -> Aether")?;
         let old = old.trim().to_lowercase();
         let new: String = new.chars().filter(|c| c.is_alphanumeric() || " -'".contains(*c)).take(40).collect::<String>().split_whitespace().collect::<Vec<_>>().join(" ");
@@ -1919,10 +1957,12 @@ impl World {
             _ => (default_char.to_string(), line),
         };
         let key = self.sheet_key(&who).ok_or_else(|| format!("no sheet for '{who}'"))?;
-        let (verb, rest) = cmd.split_once(char::is_whitespace).unwrap_or((cmd, ""));
-        let (verb, rest) = (verb.to_lowercase(), rest.trim());
-        // Arguments that name a frequency or a stat may use the story's names.
-        let rest_owned = if ["surroundings", "environment", "spend", "amplitude", "semi", "stat"].contains(&verb.as_str()) { self.unlabel(rest) } else { rest.to_string() };
+        let (verb_raw, rest) = cmd.split_once(char::is_whitespace).unwrap_or((cmd, ""));
+        // The line's own word too: after `rename class -> Calling`, `Calling offer …` is the same line.
+        let verb = self.unlabel(verb_raw).to_lowercase();
+        let rest = rest.trim();
+        // Arguments that name a frequency, a stat or a tag may use the story's names.
+        let rest_owned = if ["surroundings", "environment", "spend", "amplitude", "semi", "stat", "paths", "choose", "beyond"].contains(&verb.as_str()) { self.unlabel(rest) } else { rest.to_string() };
         let rest = rest_owned.as_str();
 
         // A frequency used on someone else needs their amplitude, before the caster is borrowed.
@@ -2663,10 +2703,6 @@ pub fn sheet_view(s: &Sheet, defs: &Defs) -> Value {
 mod tests {
     use super::*;
 
-    fn defs() -> Defs {
-        Defs::default()
-    }
-
     fn ten() -> BTreeMap<String, i64> {
         STATS.iter().map(|s| (s.to_string(), 10)).collect()
     }
@@ -2950,6 +2986,27 @@ mod tests {
         assert!(w.apply_line("spend Stoneborn 10", "Wren").is_ok());
         assert!(w.apply_line("rename speed -> Ether", "Wren").is_err()); // taken
         assert!(w.apply_line("rename mana -> Ki", "Wren").is_err()); // not a System word
+    }
+
+    #[test]
+    fn the_storys_words_reach_the_panel_and_the_lines() {
+        let mut w = world_with("Wren");
+        w.apply_line("rename skills -> Talents", "Wren").unwrap();
+        w.apply_line("rename classes -> Callings", "Wren").unwrap();
+        w.apply_line("rename HP -> Vigour", "Wren").unwrap();
+        w.apply_line("rename money -> Gold", "Wren").unwrap();
+        // What the panel writes itself takes the story's names...
+        let p = panel_labels(&w.labels);
+        assert_eq!(p["skills"], "Talents");
+        assert_eq!(p["classes"], "Callings");
+        assert_eq!(p["hp"], "Vigour");
+        assert_eq!(p["money"], "Gold");
+        assert!(!p.contains_key("spectrums"), "only words actually renamed are listed");
+        // ...and the story's words are the same words in an <rpg> line, the verb included.
+        assert!(w.apply_line("Gold +6", "Wren").is_ok());
+        assert_eq!(w.sheets["Wren"].money, 6);
+        w.apply_line("rename class -> Calling", "Wren").unwrap();
+        assert!(w.apply_line("Calling offer forager", "Wren").is_ok(), "a renamed keyword still works");
     }
 
     #[test]

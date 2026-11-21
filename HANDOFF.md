@@ -1,4 +1,4 @@
-# Handoff: Campaign Keeper 3.0.1 (AD System LitRPG mode + Tailscale pairing)
+# Handoff: Campaign Keeper 3.0.2 (AD System LitRPG mode + Tailscale pairing)
 
 Repo: `C:\Users\patri\OneDrive\Documents\GitHub\campaign-keeper` (Tauri 2 + Svelte 5 + Rust). Windows, PowerShell.
 Nothing is committed yet. There were already uncommitted changes before this work: don't revert anything.
@@ -179,4 +179,65 @@ The host and the players now work in the same UI; only host-only tools differ.
 - The installers in `installers/` were **not** rebuilt for this change yet: they still contain the
   previous `dist/`, so the browser page they serve has the old player screen. Rebuild both (commands
   above) to ship it.
+
+
+## The world's own words, and asking for them (2026-11-21)
+
+The AD System's vocabulary is the GM's to fit, and a world that already exists must be asked about it.
+
+- **More words the GM may rename.** `ad::renamable()` now also covers `species`, `class` / `classes`,
+  `skill` / `skills`, `path` / `paths`, `feat` / `feats`, `title` / `titles`, `condition` / `conditions`,
+  `inventory` and `money`, so `rename skills -> Talents` or `rename classes -> Callings` works as well as
+  `rename amplitude -> Aether`.
+- **The panel prints the story's names.** `ad::panel_labels()` (used by `rpg::Rules::view`) sends the renamed
+  words, keyed lowercase, with every sheet view; `Status.svelte` looks each heading up with `N()`
+  (case-insensitive), so the `[ System ]` bracket, Level, Experience, the stats, Spectrums, Skills, Feats,
+  Titles, Conditions, Inventory, money, the classes offered, the System log and the per-level hover all use the
+  world's words. Derived stat names are relabelled too (`view()` rewrites the `derived` keys).
+- **A renamed keyword still parses.** `ad::World::apply_line` runs the verb of an `<rpg>` line through
+  `unlabel`, and the `paths` / `choose` / `beyond` arguments as well, so after `rename class -> Calling`,
+  `Calling offer forager` means `class offer forager`.
+- **Forced ask when the rules arrive late.** `Rules.terms_pending` (new; serde-default, so old `rpg.json`
+  files still load) is set by `rpg_enable` when the rules are turned on in a world that has already begun
+  (a character came from the files, or the GM has already replied). While it is set, `game.rs` puts the
+  ruleset's ask on the player's message as `<world_words>` (`ad::TERMS_ASK` for the AD System, `rpg::TERMS_ASK`
+  for Classic): the GM must ask the table what this world calls its words, end its reply there, and write the
+  `rename` lines when they answer. `Rules::apply` clears the flag on a successful `rename` line and on
+  `rename settled` / `words settled` (for "keep the sheet's words"); the new `rpg_terms` command does the same
+  behind the host's "✔ The words are settled" button in the status panel.
+- `prompts/litrpg_ad.md` and `prompts/litrpg.md`: the renamable lists and a "WHEN THE SYSTEM / RULES ARRIVES
+  LATE" paragraph explain `<world_words>`. `prompt::PROMPT_VERSION` is now 2, so running chats rebuild their
+  instructions on their next turn.
+- Tests: `ad::tests::the_storys_words_reach_the_panel_and_the_lines` and
+  `rpg::tests::the_gm_names_the_system_and_the_asking_stops` (which also checks a refused rename settles
+  nothing). Verified: `cargo test --lib` 146 passed, 0 failed, 2 ignored; `npx svelte-check` 0 errors,
+  4 warnings; `cd app; npm run build` rebuilt `dist/` (`index-C1R1GU3f.js`).
+
+## Version 3.0.2: the world's own words, shipped (2026-11-21)
+
+Bumped to **3.0.2** in `app/package.json`, `app/src-tauri/Cargo.toml`, `app/src-tauri/Cargo.lock` and
+`app/src-tauri/tauri.conf.json`; the Android CLI regenerated `app/src-tauri/gen/android/app/tauri.properties`
+as `versionCode=3000002`, `versionName=3.0.2`. This is the first build that carries the section above (and the
+party page / player buttons from the one before).
+
+1. **Windows installer**: `installers/Campaign Keeper Setup 3.0.2.exe` — 7,306,837 bytes, ProductVersion and
+   FileVersion 3.0.2, SHA-256
+   `a72888062235ce9b24a3a235998c4c736f6026ed413b8bab30e7cc2fa63d80d1`. Built with
+   `cd app; npm run tauri build` (NSIS, currentUser, 3 m 39 s), copied from
+   `app/src-tauri/target/release/bundle/nsis/Campaign Keeper_3.0.2_x64-setup.exe`.
+2. **Android APK**: `installers/Campaign Keeper 3.0.2 (Android).apk` — 23,904,909 bytes, versionCode 3000002,
+   versionName 3.0.2, SHA-256
+   `72ec9d8b6ef699524eda11e8255fb16a45ffeb230acd39aa8458b4e02315dd8f`.
+   `npx tauri android build --apk --target aarch64` stopped again at "Creation symbolic link is not allowed
+   for this system" (no Developer Mode) after finishing the Rust build (`libcampaign_keeper_lib.so`,
+   22,198,848 bytes, 1 m 37 s). Fallback used: that `.so` copied to
+   `gen/android/app/src/main/jniLibs/arm64-v8a/`, then `gradlew.bat assembleArm64Release -x
+   rustBuildArm64Release` finished in 1 m 21 s. `aapt dump badging` and `apksigner verify --print-certs`
+   agree: `CN=Campaign Keeper`, SHA-256
+   `9b4b266b2faa4857bbcbaf9aa457f76800f3bfeb5368e11b91ca2b3b109832a2` — the same key as 2.3.0, 3.0.0 and
+   3.0.1, so it upgrades in place.
+3. `README.md`'s download table and `How to install.txt` now point at the 3.0.2 files.
+
+Verified after the bump: `cargo test --lib` 147 passed, 0 failed, 2 ignored; both installers embed the rebuilt
+`dist/` (`index-C1R1GU3f.js`), so browser players served by a host on 3.0.2 get the new player screen.
 

@@ -387,9 +387,13 @@ async fn rpg_enable(s: S<'_>, ruleset: Option<String>) -> R<rpg::Rules> {
     let d2 = d.clone();
     let sheets = off_ui(move || referee::sheets_from_campaign(&cfg, &d2)).await?;
     let mut g = s.game.lock().map_err(|_| "state lost")?;
+    // Has the world already begun? A character drawn from the files, or a scene the GM has run.
+    let started = !sheets.is_empty() || g.session.entries.iter().any(|e| e.role == "assistant");
     g.rules.enabled = true;
     // "ad" is the AD System (Spirit's rules); anything else is Classic.
     g.rules.ruleset = if ruleset.as_deref() == Some("ad") { "ad".into() } else { String::new() };
+    // The rules arriving mid-story have to ask the table what their words are called here.
+    g.rules.terms_pending = started;
     for sheet in sheets {
         if g.rules.is_ad() {
             if g.rules.ad.sheet_key(&sheet.name).is_none() {
@@ -432,6 +436,17 @@ fn rpg_views(s: S) -> R<Vec<Value>> {
 fn rpg_spend(s: S, character: String, kind: String, name: String) -> R<rpg::Rules> {
     table::spend(&s.game, &character, &kind, &name)?;
     Ok(s.game.lock().map_err(|_| "state lost")?.rules.clone())
+}
+
+/// The words are settled: the table has said what this world calls the System's words, so stop
+/// putting the question in front of the GM.
+#[tauri::command]
+fn rpg_terms(s: S) -> R<rpg::Rules> {
+    let d = dir(&s)?;
+    let mut g = s.game.lock().map_err(|_| "state lost")?;
+    g.rules.terms_pending = false;
+    rpg::save(&d, &g.rules)?;
+    Ok(g.rules.clone())
 }
 
 // --- memory -----------------------------------------------------------------
@@ -826,7 +841,7 @@ pub fn run() {
             get_config, set_config, list_models, claude_status, claude_install, claude_sign_in, agy_status, agy_install, agy_sign_in, agy_models,
             open_campaign, new_campaign, close_campaign, overview, list_files, read_file, write_file, rename_file,
             trash_file, search_files, store_save, new_session_log, get_entries, play_state, send_text, begin, stop_turn,
-            end_chat, notebook, activity_close, export_all, pictures, maps, tracks, rpg_state, rpg_enable, rpg_disable, rpg_spend, rpg_views,
+            end_chat, notebook, activity_close, export_all, pictures, maps, tracks, rpg_state, rpg_enable, rpg_disable, rpg_spend, rpg_terms, rpg_views,
             memory_status, memory_list, memory_search, memory_add, memory_update, memory_delete, memory_catch_up,
             scribe_run, scribe_presets, scribe_apply, scribe_restore, table_open, table_close, table_state, table_decide,
             table_auto_admit, table_host_character, table_host_action, table_send_now, table_talk, table_scan,

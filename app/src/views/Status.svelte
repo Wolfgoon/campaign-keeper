@@ -38,7 +38,16 @@
   });
   const adSheets = $derived(sheet ? [sheet] : adViews.filter(mine));
   let ruleset = $state("ad");
-  const N = (s: any, k: string) => s.labels?.[k] ?? k;
+  // The panel's own words take the story's names: labels come keyed lowercase from the app.
+  const N = (s: any, k: string) => s?.labels?.[k] ?? s?.labels?.[k.toLowerCase()] ?? k;
+
+  async function settle() {
+    try {
+      rules = await call("rpg_terms");
+    } catch (e) {
+      toast(e);
+    }
+  }
 
   async function enable() {
     working = true;
@@ -73,30 +82,37 @@
   </div>
 {:else if isAd}
   <div class="col status">
+    {#if !readOnly && rules?.terms_pending}
+      <div class="sect">
+        <b>Words for this world</b>
+        <p class="small muted">The rules came on after the story had begun, so the GM will ask the table what to call its words before the scene goes on, and write the new names itself.</p>
+        <button class="ghost small" onclick={settle}>✔ The words are settled</button>
+      </div>
+    {/if}
     {#if !adSheets.length}
       <p class="small muted">The System is on. The status window opens once the GM has settled the character.</p>
     {/if}
     {#each adSheets as s}
       <div class="sys">
         <h3>[ {N(s, "System").toUpperCase()} ] {s.name}</h3>
-        <div class="small">{s.species} ({s.species_tier}) · {s.class ? `${s.class} (${s.class_tier})` : "No class"}</div>
+        <div class="small">{s.species} ({s.species_tier}) · {s.class ? `${s.class} (${s.class_tier})` : `No ${N(s, "class").toLowerCase()}`}</div>
         <div style="margin-top:6px">{N(s, "Level")} {s.level} · {N(s, "Experience")} {s.xp} / {s.xp_next}</div>
         <div class="bar xp"><i style:width="{s.xp_percent}%"></i></div>
 
         <div class="sect">
           <table><tbody>
             {#each Object.entries(s.stats) as [k, v]}
-              <tr title="+{s.per_level[k]} per level"><td>{N(s, k)}</td><td class="n">{v}
+              <tr title="+{s.per_level[k]} per {N(s, "level").toLowerCase()}"><td>{N(s, k)}</td><td class="n">{v}
                 {#if canSpend && s.bonus_points.to_spend > 0}<button aria-label="Raise {k}" onclick={() => spend(s.name, "bp", `stat|${k}|1`)}>+</button>{/if}
               </td></tr>
             {/each}
             {#each Object.entries(s.derived) as [k, v]}<tr><td class="small">{k}</td><td class="n small mono">{v}</td></tr>{/each}
           </tbody></table>
-          {#if s.bonus_points.to_spend > 0}<div class="small" style="color:var(--gold)">{s.bonus_points.to_spend} bonus points to spend (+0.1% a stat each)</div>{/if}
+          {#if s.bonus_points.to_spend > 0}<div class="small" style="color:var(--gold)">{s.bonus_points.to_spend} {N(s, "bonus points").toLowerCase()} to spend (+0.1% a stat each)</div>{/if}
         </div>
 
         <div class="sect">
-          <b>Spectrums</b> <span class="small muted">{s.environment}</span>
+          <b>{N(s, "spectrums")}</b> <span class="small muted">{s.environment}</span>
           {#each s.spectrums as f}
             <div title={f.does}>{f.number} {f.name} · {f.spectrum} <span class="small mono">{f.amplitude}</span>{#if f.blocked} <span class="why">blocked</span>{:else if f.overused_percent > 0}<span class="why"> overused {f.overused_percent.toFixed(1)}%</span>{/if}</div>
             <div class="bar mp"><i style:width="{f.percent}%"></i></div>
@@ -105,7 +121,8 @@
         </div>
 
         {#each Object.entries(s.paths_open ?? {}) as [tag, opts]}
-          <div class="sect"><b>{tag.replace("skill:", "")} can rise a tier</b>
+          {@const who = tag.startsWith("skill:") ? tag.slice(6) : N(s, tag)}
+          <div class="sect"><b>{who} can rise a tier</b>
             {#each opts as any[] as o}
               <div><button disabled={!canSpend} onclick={() => spend(s.name, "path", `${tag}|${o.pick}`)}>{o.pick}. {o.name}{o.yours_alone ? " *" : ""}</button><div class="why">{o.about}</div></div>
             {/each}
@@ -114,13 +131,13 @@
         {/each}
 
         {#if s.classes_available?.length}
-          <div class="sect"><b>Classes offered</b>
+          <div class="sect"><b>{N(s, "classes")} offered</b>
             {#each s.classes_available as c}<div><button disabled={!canSpend} onclick={() => spend(s.name, "class", c.key)}>{c.name}</button><div class="why">{c.about}</div></div>{/each}
           </div>
         {/if}
 
         <div class="sect">
-          <b>Skills</b>
+          <b>{N(s, "skills")}</b>
           {#if !Object.keys(s.skills).length}<div class="small">None yet.</div>{/if}
           <table><tbody>
             {#each Object.entries(s.skills) as [k, v]}
@@ -136,15 +153,15 @@
         </div>
 
         {#if s.feats.length || s.titles.length}
-          <div class="sect"><b>Feats</b>
+          <div class="sect"><b>{N(s, "feats")}</b>
             <ul>{#each s.feats as f}<li title={f.rewards.join(", ")}>{f.name}<div class="why">{f.about}</div></li>{/each}</ul>
-            {#if s.titles.length}<div class="small">Titles: {s.titles.join(", ")}</div>{/if}
+            {#if s.titles.length}<div class="small">{N(s, "titles")}: {s.titles.join(", ")}</div>{/if}
           </div>
         {/if}
 
-        {#if s.conditions.length}<div class="sect"><b>Conditions</b><ul>{#each s.conditions as c}<li>{c}</li>{/each}</ul></div>{/if}
+        {#if s.conditions.length}<div class="sect"><b>{N(s, "conditions")}</b><ul>{#each s.conditions as c}<li>{c}</li>{/each}</ul></div>{/if}
 
-        <div class="sect"><b>Inventory</b> <span class="small">({s.money} money)</span>
+        <div class="sect"><b>{N(s, "inventory")}</b> <span class="small">({s.money} {N(s, "money").toLowerCase()})</span>
           {#if !s.inventory.length}<div class="small">Empty.</div>{/if}
           <ul>{#each s.inventory as i}<li title={i.about}>{i.name}{i.qty > 1 ? ` x${i.qty}` : ""}</li>{/each}</ul>
         </div>
@@ -153,7 +170,7 @@
 
     {#if !readOnly && rules?.log?.length}
       <details class="recall">
-        <summary>System log</summary>
+        <summary>{N(adSheets[0] ?? {}, "System")} log</summary>
         <ul>{#each rules.log.slice(-30).reverse() as l}<li class="mono">{l}</li>{/each}</ul>
       </details>
     {/if}
@@ -163,6 +180,13 @@
   </div>
 {:else}
   <div class="col status">
+    {#if !readOnly && rules?.terms_pending}
+      <div class="sect">
+        <b>Words for this world</b>
+        <p class="small muted">The rules came on after the story had begun, so the GM will ask the table what to call its words before the scene goes on, and write the new names itself.</p>
+        <button class="ghost small" onclick={settle}>✔ The words are settled</button>
+      </div>
+    {/if}
     {#if !shown.length}
       <p class="small muted">Rules are on. The status window opens once the GM has settled the character.</p>
     {/if}

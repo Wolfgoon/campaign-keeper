@@ -30,12 +30,22 @@ WORDS
   Renameable: the four stats and their long names, amplitude, speed,
   stamina, frequency, spectrum, soul prism, semi skill, base frequency,
   unbalanced environment, overpower, world hoppers, alien zone,
-  experience, level, bonus points, System, every frequency and spectrum
-  name, and every tier name. Only the name changes: values and rulings
-  stay. The status window shows the new names; in <rpg> lines you may
-  use either. Do it when it means something, not every reply. A renamed
-  word is then the word: use it in the story, and never use "mana" or
-  "magic" for a character's power unless you renamed something to it.
+  experience, level, bonus points, System, species, class, skills,
+  paths, feats, titles, conditions, inventory, money, every frequency
+  and spectrum name, and every tier name. Only the name changes: values
+  and rulings stay. The status window and the player's sheet show the new
+  names; in <rpg> lines you may use either. Do it when it means
+  something, not every reply. A renamed word is then the word: use it in
+  the story, and never use "mana" or "magic" for a character's power
+  unless you renamed something to it.
+- WHEN THE SYSTEM ARRIVES LATE: if the rules came on after the story had
+  already begun, the app says so in <world_words>. Then ask the table, in
+  one short message, what this world calls these words — level and
+  experience, species and classes, the four stats, amplitude, spectrum,
+  soul prism, skills and feats, the System itself — and offer a name of
+  your own for each. End your reply there, with the scene waiting. Write
+  the `rename` lines when they answer, and use their words from then on.
+  If they keep the System's words as they are, write `rename settled`.
 
 WHAT THE PLAYER KNOWS (never break this)
 - A character knows only the 11 starting frequencies (numbers 0 to 10)

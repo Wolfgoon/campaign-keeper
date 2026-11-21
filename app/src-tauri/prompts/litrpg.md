@@ -76,6 +76,13 @@ NAMES THAT FIT THE STORY
   a skill's name never includes its rank. Keep writing your changes with
   the same short words (hp, stamina, mana, money) whatever they're called.
   Do it when it means something, not every reply.
+- WHEN THE RULES ARRIVE LATE: if the rules came on after the story had
+  already begun, the app says so in <world_words>. Ask the table, in one
+  short message, what this world calls the six attributes, HP, Stamina,
+  Mana, Money and their skills, and offer a name of your own for each.
+  End your reply there, with the scene waiting. Write the `rename` lines
+  when they answer (or `rename settled` if they keep the sheet's words),
+  and use their words from then on.
 
 A NEW CHARACTER
 - If there is no <status_window> yet and the character is decided, end
