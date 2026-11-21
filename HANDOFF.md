@@ -1,8 +1,8 @@
-# Handoff: Campaign Keeper 3.0.2 (AD System LitRPG mode + Tailscale pairing)
+# Handoff: Campaign Keeper 3.0.3 (Windows; AI Game Master, AD System, serverless multiplayer)
 
 Repo: `C:\Users\patri\OneDrive\Documents\GitHub\campaign-keeper` (Tauri 2 + Svelte 5 + Rust). Windows, PowerShell.
-Everything described here is committed and pushed to `main` (latest: `5778f6e`, version 3.0.2). Start with
-**Still to do** at the bottom of the version sections.
+Everything described here is committed and pushed to `main` (latest version: 3.0.3, Windows exe only — the
+Android APK is still 3.0.2). Start with **Still to do** at the bottom of the version sections.
 
 ## What was done
 - **New ruleset "AD System"**: Spirit's leveling, magic (frequencies) and crafting, ported from
@@ -283,7 +283,18 @@ Reported from a real table: "all the xp only goes to the host's stats."
   an_unnamed_line_waits_for_a_name_when_two_characters_acted, a_named_line_still_picks_that_character,
   a_solo_game_still_takes_unnamed_lines, the_system_too_gives_experience_to_the_one_who_acted}`.
   `cargo test --lib`: **159 passed, 0 failed, 2 ignored**.
-- **Not shipped yet.** No version bump, no new installers: `installers/` still holds 3.0.2. Cutting 3.0.3 means
-  bumping the four version files (+ Android `tauri.properties` → `versionCode=3000003`), `npm run tauri build`,
-  the Android jniLibs fallback, then the hashes in this file and `README.md`.
+- **Shipped for Windows as 3.0.3** (2026-11-21), exe only. Bumped to 3.0.3 in `app/package.json`,
+  `app/src-tauri/Cargo.toml`, `app/src-tauri/Cargo.lock` and `app/src-tauri/tauri.conf.json`.
+  `cd app; npm run tauri build` (NSIS, currentUser; 3 m 17 s Rust, then makensis) gave
+  `installers/Campaign Keeper Setup 3.0.3.exe` — 7,325,143 bytes, ProductVersion and FileVersion 3.0.3,
+  SHA-256 `e48dd8d8dc45c210d224a677cb614f40d5a3765e16b5295ddb55686b2c5b7f64`, copied from
+  `app/src-tauri/target/release/bundle/nsis/Campaign Keeper_3.0.3_x64-setup.exe`. The binary carries the fix
+  (strings `start the line with all:`, `(or all: for everyone)`, `shared victory` are in it). `dist/` rebuilt
+  to the same `index-C1R1GU3f.js` (there was no UI change).
+- **Android is still 3.0.2** — `installers/Campaign Keeper 3.0.2 (Android).apk`, versionCode 3000002 — and
+  does not have this fix. The next `npx tauri android build --apk --target aarch64` (jniLibs fallback if it
+  stops on the symlink) takes 3.0.3 from the bumped files and regenerates
+  `gen/android/app/tauri.properties` as `versionCode=3000003`.
+- `README.md`'s download table and `How to install.txt` now point at the Windows 3.0.3 file; the Android rows
+  stay on 3.0.2 until that APK is cut.
 
