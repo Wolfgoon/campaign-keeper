@@ -1,7 +1,8 @@
 # Handoff: Campaign Keeper 3.0.2 (AD System LitRPG mode + Tailscale pairing)
 
 Repo: `C:\Users\patri\OneDrive\Documents\GitHub\campaign-keeper` (Tauri 2 + Svelte 5 + Rust). Windows, PowerShell.
-Nothing is committed yet. There were already uncommitted changes before this work: don't revert anything.
+Everything described here is committed and pushed to `main` (latest: `5778f6e`, version 3.0.2). Start with
+**Still to do** at the bottom of the version sections.
 
 ## What was done
 - **New ruleset "AD System"**: Spirit's leveling, magic (frequencies) and crafting, ported from
@@ -134,10 +135,13 @@ older commits from P-Hoep (`ea9a3fc`, `878ca4c`, `4b1d5dc` "deepseeks"), so it w
 ## Still to do
 1. Paste the DeepSeek key in Settings → Other models (or set `DEEPSEEK_API_KEY`): this machine is
    pointed at DeepSeek V4 Flash but no key was available to store.
-2. Optional: delete the old `installers/*3.0.0*` and `*2.3.0*` files (they are tracked and pushed;
+2. Optional: delete the old `installers/*3.0.0*`, `*3.0.1*` and `*2.3.0*` files (they are tracked and pushed;
    removing them is a commit of its own) once the owner confirms nobody still has them.
 3. Not tested by hand yet: start a game with the AD System on and check that the GM writes `<rpg>` lines in the format
    given in `litrpg_ad.md`. Pairing has only been exercised by the automated table tests, not with a real phone.
+4. Not tested by hand yet: turn the rules on in a campaign that has already begun, and check that the GM asks the
+   table what the world calls its words (`<world_words>`), that the answers land on the panel and in `<rpg>`
+   lines, and that `rename settled` or the panel's "✔ The words are settled" button ends the asking.
 
 ## Android build command (for next time)
 ```
