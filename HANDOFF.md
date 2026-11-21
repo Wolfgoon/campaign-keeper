@@ -1,7 +1,7 @@
-# Handoff: Campaign Keeper 3.0.5 (Windows; AI Game Master, AD System, serverless multiplayer)
+# Handoff: Campaign Keeper 3.0.6 (Windows; AI Game Master, AD System, serverless multiplayer)
 
 Repo: `C:\Users\patri\OneDrive\Documents\GitHub\campaign-keeper` (Tauri 2 + Svelte 5 + Rust). Windows, PowerShell.
-Everything described here is committed and pushed to `main` (latest version: 3.0.5, Windows exe only — the
+Everything described here is committed and pushed to `main` (latest version: 3.0.6, Windows exe only — the
 Android APK is still 3.0.2). Start with **Still to do** at the bottom of the version sections.
 
 ## What was done
@@ -145,8 +145,12 @@ older commits from P-Hoep (`ea9a3fc`, `878ca4c`, `4b1d5dc` "deepseeks"), so it w
 5. Not tested by hand yet: have the GM define a class or a species of its own (`define class …`,
    `define species …`) and reshape one with `class change …` / `species change …` at a table with two
    characters, and check the log says `CLASS CHANGE: … -> …` / `SPECIES CHANGE: … -> …` and that the new
-   growth applies at the next level. The lines work in `ad::tests` and `game::tests`; the live table has
-   only seen up to the 3.0.3 build, where the define was refused.
+   growth applies at the next level. Since 3.0.6 the reshape only lands at level 5 (class) and level 25
+   (species, or at creation on a level 1 sheet), so give the test character experience first. The lines
+   work in `ad::tests` and `game::tests`; the live table has only seen up to the 3.0.3 build, where the
+   define was refused.
+6. Optional: the tracked `installers/*3.0.4*` and `*3.0.5*` files are superseded by 3.0.6 and can be
+   deleted in a commit of their own.
 
 ## Android build command (for next time)
 ```
@@ -388,6 +392,50 @@ wrong or explained the app away, which is the same failure 3.0.4 fixed for class
   `YOU ARE THE SYSTEM`, `CLASS CHANGE` are in it). `dist/` rebuilt to the same `index-C1R1GU3f.js` (no UI
   change). `README.md`'s download table and `How to install.txt` point at the 3.0.5 file; the 3.0.4 file stays
   in `installers/` for anyone who already has it.
-- **Android is still 3.0.2** and has none of the 3.0.3/3.0.4/3.0.5 fixes.
+- **Android is still 3.0.2** and has none of the 3.0.3/3.0.4/3.0.5/3.0.6 fixes.
+
+## Fix after 3.0.5: a reshape had no age to it (2026-11-21)
+
+3.0.4 and 3.0.5 let the System reshape a class or a species at any level — a level 1 sheet could be handed
+a mythic class by a single line, and `class change` on someone with no class silently *assigned* one,
+skipping `class offer` and the player's `choose`. The owner asked for the level requirement the rest of the
+System already uses, with creation still free for species.
+
+- **`Sheet::can_change_class`** — they hold a class and are level 5 (`class_tier_level(0)`, where a class
+  first evolves). **`Sheet::can_change_species`** — level 25 (`species_tier_level(0)`, where a species
+  first evolves), *or* level 1, which is a sheet still being made: creation is the one time before 25 that
+  a species may be named. Both are checked in `change_class` / `change_species`, so every caller is gated.
+- Gating on the **first** tier's level rather than their current tier's is deliberate: the current tier's
+  requirement runs past the level cap at the top tiers (5^7 = 78,125 for mythical, 25^4 = 390,625 for
+  cataclysmic), which would have locked those characters out of ever being reshaped.
+- **`class change` on a sheet with no class is now refused** — `class offer <class>`, then `class choose`.
+  Without that, a level 1 sheet could be given a class outright, which no level gate can guard.
+  `offer_class`'s "they already have a class" hint now says "from level 5".
+- Refusals read: `a class change waits for level 5: until then a class is what their deeds earned` and
+  `a species change waits for level 25: until then a species is what they were made (a new character's is
+  set at creation)`. The species line fires only at levels 2–24, because 1 is creation.
+- **Prompt** (`litrpg_ad.md`): the **YOU ARE THE SYSTEM** line now carries the ages ("a class from level 5,
+  a species from level 25 or at creation"), both reshape bullets spell them out, and the **A NEW CHARACTER**
+  section says a species defined after the sheet can still be set while they are level 1.
+  `prompt::PROMPT_VERSION` is 6 (it was 5 in 3.0.5), so running chats rebuild the GM's instructions next turn.
+- **Tests.** `ad::tests::the_system_reshapes_a_class_the_story_has_outgrown` now checks the no-class refusal,
+  the level 1 refusal ("waits for level 5"), and that the reshape lands at 5; the species test keeps its
+  level 1 creation path; new `ad::tests::a_species_change_waits_for_level_25_once_creation_is_over` puts the
+  sheet at level 2 (refused, nothing changed) and at 25 (lands, tier still 0). `cargo test --lib`:
+  **164 passed, 0 failed, 2 ignored**.
+- **Nothing to migrate**: same save format. A character already past 5 / 25 can reshape at once; one below
+  it waits, which is the point. (A species changed at level 1 in 3.0.5 stays as it is; the gate only guards
+  new lines.)
+- **Shipped for Windows as 3.0.6** (2026-11-21), exe only. Bumped to 3.0.6 in `app/package.json`,
+  `app/src-tauri/Cargo.toml`, `app/src-tauri/Cargo.lock` and `app/src-tauri/tauri.conf.json`;
+  `cd app; npm run tauri build` gave `installers/Campaign Keeper Setup 3.0.6.exe` — 7,319,140 bytes,
+  ProductVersion and FileVersion 3.0.6, SHA-256
+  `01e3635da9f019e94e4c4592b9b9c7348bc5ada32ec2c4a318ece0cfb5a3ff90`, copied from
+  `app/src-tauri/target/release/bundle/nsis/Campaign Keeper_3.0.6_x64-setup.exe`. The app exe carries the
+  new rules (`a class change waits for level`, `a species change waits for level`, `they have no class yet`,
+  `reshapes it, from level 5`, `a class from level 5, a species from level 25 or at creation`).
+  `dist/` rebuilt unchanged (`index-C1R1GU3f.js`, no UI change). `README.md`'s download table and
+  `How to install.txt` point at the 3.0.6 file; 3.0.4 and 3.0.5 stay in `installers/` for anyone who has them.
+- **Android is still 3.0.2** and has none of the 3.0.3/3.0.4/3.0.5/3.0.6 fixes.
 
 

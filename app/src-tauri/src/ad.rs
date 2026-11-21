@@ -1517,7 +1517,7 @@ impl Sheet {
     /// The System offers a class (Spirit offers the built-in ones whose skill requirements are met).
     pub fn offer_class(&mut self, key: &str, defs: &Defs) -> Result<String, String> {
         if self.cls.is_some() {
-            return Err("they already have a class (class change <class> reshapes the one they hold)".into());
+            return Err("they already have a class (class change <class> reshapes it, from level 5)".into());
         }
         let key = defs.class_key(key).ok_or_else(|| format!("no class '{key}': define it first"))?;
         if !self.offered.contains(&key) {
@@ -1544,10 +1544,27 @@ impl Sheet {
         Ok(())
     }
 
+    /// A class is reshaped only once they hold one and are old enough for it to have changed:
+    /// level 5, where a class first evolves. Before that the way in is `class offer` + their `choose`.
+    pub fn can_change_class(&self) -> bool {
+        self.cls.is_some() && self.level as u64 >= class_tier_level(0)
+    }
+    /// A species is reshaped at level 25, where a species first evolves, or at creation still: a
+    /// level 1 sheet is a sheet being made, and its species is one of the choices being made.
+    pub fn can_change_species(&self) -> bool {
+        self.level == 1 || self.level as u64 >= species_tier_level(0)
+    }
+
     /// The System reshapes a class: life has made them something other than what their class says.
     /// The tier they earned stands, the old class's skills stay learnt, and the new class's growth
     /// and skills apply from here on. The System's decision, announced to the player.
     pub fn change_class(&mut self, name: &str, defs: &Defs) -> Result<String, String> {
+        if self.cls.is_none() {
+            return Err("they have no class yet: class offer <class>, then class choose once they pick it".into());
+        }
+        if !self.can_change_class() {
+            return Err(format!("a class change waits for level {}: until then a class is what their deeds earned", class_tier_level(0)));
+        }
         let key = defs.class_key(name).ok_or_else(|| format!("no class '{name}': define it first"))?;
         if self.cls.as_deref() == Some(key.as_str()) {
             return Err("that is already their class".into());
@@ -1569,6 +1586,9 @@ impl Sheet {
     /// tier they reached stands, and the new species' growth and traits apply from here on. The
     /// System's decision, announced to the player.
     pub fn change_species(&mut self, name: &str, defs: &Defs) -> Result<String, String> {
+        if !self.can_change_species() {
+            return Err(format!("a species change waits for level {}: until then a species is what they were made (a new character's is set at creation)", species_tier_level(0)));
+        }
         let key = defs.species_key(name).ok_or_else(|| format!("no species '{name}': define it first"))?;
         if self.species == key {
             return Err("that is already their species".into());
@@ -3120,10 +3140,16 @@ mod tests {
     #[test]
     fn the_system_reshapes_a_class_the_story_has_outgrown() {
         let mut w = world_with("Wren");
+        // A class is never handed out by a change at any level: that is offer + the player's choose.
+        assert!(w.apply_line("class change survivor", "Wren").unwrap_err().contains("class offer"), "the way in is offer + choose");
         w.apply_line("class offer survivor", "Wren").unwrap();
         w.apply_line("class choose survivor", "Wren").unwrap();
-        w.sheets.get_mut("Wren").unwrap().drain();
         w.apply_line("define class night shift | Night Shift | Never lost in a building. | growth HP 2, STR 1, INT 2, DEX 1", "Wren").unwrap();
+        // Below level 5 their class is what their deeds earned, and the System cannot rewrite it.
+        w.sheets.get_mut("Wren").unwrap().drain();
+        assert!(w.apply_line("class change night shift", "Wren").unwrap_err().contains("waits for level 5"));
+        w.sheets.get_mut("Wren").unwrap().level = class_tier_level(0) as u32;
+        w.sheets.get_mut("Wren").unwrap().drain();
         let said = w.apply_line("class change night shift", "Wren").unwrap();
         assert!(said.contains("CLASS CHANGE") && said.contains("Night Shift"), "the player is told: {said}");
         let d = w.defs.clone();
@@ -3145,6 +3171,7 @@ mod tests {
         // The GM names its lines at a table, and a species change belongs to that character.
         w.apply_line("define species night-born | Night-Born | Born of the dark between the stars. | growth HP 3, STR 2, INT 1, DEX 3", "Wren").unwrap();
         assert!(w.defs.species("night-born").is_some(), "the System defined its own species");
+        // A level 1 sheet is still being made, so its species is still a choice at creation.
         let said = w.apply_line("Wren: species change night-born", "Wren").unwrap();
         assert!(said.contains("SPECIES CHANGE") && said.contains("Night-Born"), "the player is told: {said}");
         let d = w.defs.clone();
@@ -3160,5 +3187,24 @@ mod tests {
         assert!(w.apply_line("species change nobody", "Wren").is_err());
         // Rising a tier is still `paths species`: this line is for becoming, not rising.
         assert!(w.apply_line("species offer night-born", "Wren").is_err());
+    }
+
+    #[test]
+    fn a_species_change_waits_for_level_25_once_creation_is_over() {
+        // The line is for what the story has made them, and that only counts once they have lived:
+        // level 25 is where a species first evolves, so it is where one may first be rewritten.
+        let mut w = world_with("Wren");
+        w.apply_line("define species night-born | Night-Born | Born of the dark between the stars. | growth HP 3, STR 2, INT 1, DEX 3", "Wren").unwrap();
+        let s = w.sheets.get_mut("Wren").unwrap();
+        s.level = 2; // the first level earned: the sheet is no longer being made
+        s.drain();
+        let said = w.apply_line("species change night-born", "Wren").unwrap_err();
+        assert!(said.contains("waits for level 25"), "{said}");
+        assert_eq!(w.sheets["Wren"].species, "human", "nothing changed");
+        // The same line at 25 lands, and the tier they reached still stands.
+        w.sheets.get_mut("Wren").unwrap().level = species_tier_level(0) as u32;
+        assert!(w.apply_line("species change night-born", "Wren").unwrap().contains("SPECIES CHANGE"));
+        assert_eq!(w.sheets["Wren"].species, "night-born");
+        assert!(w.sheets["Wren"].can_change_species());
     }
 }

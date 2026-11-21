@@ -20,7 +20,7 @@ const FALLBACK_INSTRUCTIONS: &str = include_str!("../../../TEMPLATE/00_GM/ai_dun
 
 /// Bump when the instructions change: running chats then pick up the new abilities on their next
 /// turn, instead of only new games getting them.
-pub const PROMPT_VERSION: u32 = 5;
+pub const PROMPT_VERSION: u32 = 6;
 
 const ART_MODEL: &str = include_str!("../prompts/art_model.md");
 
