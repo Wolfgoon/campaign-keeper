@@ -146,3 +146,37 @@ cd app; npx tauri android build --apk --target aarch64
 ```
 Output: `app/src-tauri/gen/android/app/build/outputs/apk/arm64/release/app-arm64-release.apk` -> copy to
 `installers/Campaign Keeper 3.0.1 (Android).apk`. If it stops on the symlink error, run the jniLibs fallback above.
+
+## Party pages, player action buttons, one Host tab (2026-11-21)
+
+The host and the players now work in the same UI; only host-only tools differ.
+
+- **One Host tab.** `App.svelte`'s top bar is now `🏠 Overview · ▶ Play · 👥 Party · 🛠 Host`.
+  `views/Host.svelte` (new) keeps the old host-only pages under sub-tabs: `👥 Table`, `📁 Files`,
+  `✏ Scribe`, `🧠 Memory`, `🔍 Search`. `Table.svelte` no longer lives in Play's side panel.
+- **A shared Party page.** `views/Party.svelte` (new): the table roster, the party's shared notes and
+  the host's sheet. It reads the same state players get, so the host sees what they see.
+- **A shared notes page.** `net/table.rs` gained `NOTE_FILE = "04_Quests/party_notes.md"`,
+  `save_note`, `host_note`, a `note` field in every player's `table` message, and a `{ "t": "note" }`
+  client message. Any seated player (browser or app) may write it, and the host can write it from
+  Party; each save is broadcast to everyone. New commands: `party_notes` (read) and `party_note`
+  (write). Older campaigns get the file on the first save. `TEMPLATE/04_Quests/party_notes.md` is new.
+- **Players' own sheet only.** `table_for` still sends just `rules.view(character)`; a new test
+  (`net::table_tests::the_party_shares_one_page_and_each_player_gets_only_their_own_sheet`) checks
+  a browser player's note reaches the others and that only their own sheet crosses the wire.
+  `Status.svelte` gained `only` (`null` = every sheet, a name = that one); Play, Party and
+  Overview pass the host's character while `table.host_is_gm` is false, so a hosting player sees
+  exactly their own sheet, not the party's.
+- **Web/app player action bar.** `Client.svelte`'s composer now has `> Do` / `" Say` modes, one-tap
+  `👀 Look`, `👂 Listen`, `⏳ Wait` (they fill the box rather than sending), and `👥 Party`,
+  `📊 Sheet`, `📜 Notes` buttons. The side panel gained a `📜` Party notes tab. The browser gets all
+  of it because it runs the same component.
+- Docs: `README.md` and `How to install.txt` point at **🛠 Host → 👥 Table** and describe what the
+  whole table shares.
+- Verified: `cargo test --lib` 144 passed, 0 failed, 2 ignored; `npx svelte-check` 0 errors,
+  4 warnings (the same four as before); `cd app; npm run build` rebuilt `dist/` (needed: `net/web.rs`
+  embeds it).
+- The installers in `installers/` were **not** rebuilt for this change yet: they still contain the
+  previous `dist/`, so the browser page they serve has the old player screen. Rebuild both (commands
+  above) to ship it.
+

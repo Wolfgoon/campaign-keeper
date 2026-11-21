@@ -8,10 +8,8 @@
   import Welcome from "./views/Welcome.svelte";
   import Overview from "./views/Overview.svelte";
   import Play from "./views/Play.svelte";
-  import Files from "./views/Files.svelte";
-  import Scribe from "./views/Scribe.svelte";
-  import Search from "./views/Search.svelte";
-  import Memory from "./views/Memory.svelte";
+  import Party from "./views/Party.svelte";
+  import Host from "./views/Host.svelte";
   import Settings from "./views/Settings.svelte";
   import Client from "./views/Client.svelte";
 
@@ -31,9 +29,23 @@
   // Bumped when the account's copy replaces the open game, so every view reads it afresh.
   let epoch = $state(0);
 
+  // The story, the party and their notes are the whole table's. Host-only tools sit behind one tab.
   const TABS = [
-    ["overview", "🏠 Overview"], ["play", "▶ Play"], ["files", "📁 Files"], ["scribe", "✏ Scribe"], ["search", "🔍 Search"], ["memory", "🧠 Memory"],
+    ["overview", "🏠 Overview"], ["play", "▶ Play"], ["party", "👥 Party"], ["host", "🛠 Host"],
   ];
+
+  // Where the Host tab was last left, so "Scribe" in Play opens the Scribe, not the table.
+  let hostPart = $state("table");
+
+  /** Move to a tab; "host:scribe" opens the Host tab on one of its pages. */
+  function go(t: string) {
+    if (t.startsWith("host:")) {
+      hostPart = t.slice(5);
+      tab = "host";
+    } else {
+      tab = t;
+    }
+  }
 
   bindToast((s) => {
     toastText = s;
@@ -173,12 +185,10 @@
     {#key epoch}
     <div class="view">
       <!-- Play stays mounted so a reply keeps streaming while you read a file. -->
-      <div class="view" style:display={tab === "play" ? "flex" : "none"}><Play {cfg} save={saveCfg} go={(t: string) => (tab = t)} /></div>
-      {#if tab === "overview"}<Overview go={(t: string) => (tab = t)} />
-      {:else if tab === "files"}<Files />
-      {:else if tab === "scribe"}<Scribe />
-      {:else if tab === "search"}<Search />
-      {:else if tab === "memory"}<Memory />
+      <div class="view" style:display={tab === "play" ? "flex" : "none"}><Play {cfg} save={saveCfg} {go} /></div>
+      {#if tab === "overview"}<Overview {go} />
+      {:else if tab === "party"}<Party {go} />
+      {:else if tab === "host"}<Host {cfg} bind:part={hostPart} />
       {/if}
     </div>
     {/key}

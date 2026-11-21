@@ -2,7 +2,16 @@
   import { call, toast } from "../lib/api";
 
   // `rules` is the host's full state; a player at someone's table gets just `sheet`, read-only.
-  let { rules = $bindable(null), sheet = null, readOnly = false, onSpend = null, labels = null } = $props();
+  // `only` keeps a host who is playing a character at their own table to that one sheet; a null
+  // `only` means no limit (the GM reading every sheet).
+  let {
+    rules = $bindable(null),
+    sheet = null,
+    readOnly = false,
+    onSpend = null,
+    labels = null,
+    only = null,
+  }: { rules?: any; sheet?: any; readOnly?: boolean; onSpend?: any; labels?: any; only?: string | null } = $props();
 
   // What this story calls things.
   const named = $derived(labels ?? rules?.labels ?? {});
@@ -14,7 +23,9 @@
   const xpFor = (level: number) => 50 * (level - 1) * level;
   const pct = (a: number, b: number) => (b > 0 ? Math.max(0, Math.min(100, (a / b) * 100)) : 0);
 
-  let sheets = $derived(sheet ? [sheet] : Object.values(rules?.sheets ?? {}) as any[]);
+  const mine = (s: any) => only === null || only === undefined || String(s?.name ?? "").toLowerCase() === only.toLowerCase();
+  let sheets = $derived((sheet ? [sheet] : Object.values(rules?.sheets ?? {})) as any[]);
+  const shown = $derived(sheets.filter(mine));
 
   // The AD System (Spirit's rules): the host's sheets come ready-worked from the app.
   const isAd = $derived(sheet ? sheet.ruleset === "ad" : rules?.ruleset === "ad");
@@ -25,7 +36,7 @@
       call("rpg_views").then((v: any) => (adViews = v)).catch(() => {});
     }
   });
-  const adSheets = $derived(sheet ? [sheet] : adViews);
+  const adSheets = $derived(sheet ? [sheet] : adViews.filter(mine));
   let ruleset = $state("ad");
   const N = (s: any, k: string) => s.labels?.[k] ?? k;
 
@@ -152,10 +163,10 @@
   </div>
 {:else}
   <div class="col status">
-    {#if !sheets.length}
+    {#if !shown.length}
       <p class="small muted">Rules are on. The status window opens once the GM has settled the character.</p>
     {/if}
-    {#each sheets as s}
+    {#each shown as s}
       <div class="sys">
         <h3>[ STATUS ] {s.name}</h3>
         <div class="small">Level {s.level} {s.class || "Adventurer"}</div>

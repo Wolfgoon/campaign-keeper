@@ -26,6 +26,9 @@ const MAX_FAILS: u32 = 5;
 const MAX_NEW_CHARACTERS: u32 = 2;
 /// Room for a drawing, which arrives as SVG.
 const MAX_ACTION: usize = 200_000;
+/// The party's shared notes: one page every seat can read and write, and the GM sees with its files.
+pub const NOTE_FILE: &str = "04_Quests/party_notes.md";
+const MAX_NOTE: usize = 20_000;
 const HEARTBEAT: Duration = Duration::from_secs(15);
 /// A player whose app sends heartbeats and then goes silent this long has dropped off (a phone
 /// that fell asleep, a cable pulled), and the table stops waiting for them.
@@ -249,17 +252,36 @@ fn safe_entries(st: &Shared, table: &Table) -> Vec<Value> {
 }
 
 fn table_for(st: &Shared, t: &Table, character: &str, you: u64) -> Value {
-    let (sheet, activities, busy, labels, maps) = match st.lock() {
+    let (sheet, activities, busy, labels, maps, note) = match st.lock() {
         Ok(s) => (
             s.rules.view(character),
             s.session.activities.iter().filter(|a| a["for"].as_str().is_none_or(|f| f.eq_ignore_ascii_case(character))).cloned().collect::<Vec<_>>(),
             s.busy,
             s.rules.labels.clone(),
             s.dir.as_deref().map(crate::map::views).unwrap_or_default(),
+            s.dir.as_deref().map(|d| std::fs::read_to_string(d.join(NOTE_FILE)).unwrap_or_default()).unwrap_or_default(),
         ),
-        Err(_) => (None, Vec::new(), false, Default::default(), Vec::new()),
+        Err(_) => (None, Vec::new(), false, Default::default(), Vec::new(), String::new()),
     };
-    json!({ "t": "table", "you": you, "busy": busy, "state": t.state(), "characters": characters(st), "sheet": sheet, "activities": activities, "labels": labels, "maps": maps })
+    // Each player gets their own sheet and the shared page: nobody reads anyone else's sheet.
+    json!({ "t": "table", "you": you, "busy": busy, "state": t.state(), "characters": characters(st), "sheet": sheet, "activities": activities, "labels": labels, "maps": maps, "note": note })
+}
+
+/// Save the party's shared notes. One fixed file, so nothing else can be written this way.
+pub fn save_note(st: &Shared, text: &str) -> Result<(), String> {
+    let text: String = text.chars().take(MAX_NOTE).collect();
+    let dir = st.lock().map_err(|_| "state lost")?.dir.clone().ok_or("No campaign is open.")?;
+    campaign::write(&dir, NOTE_FILE, &text)
+}
+
+/// The host edits the same page the players do; everyone at the table gets the new text at once.
+pub fn host_note(app: &dyn Host, st: &Shared, t: Option<&Arc<Table>>, text: &str) -> Result<(), String> {
+    save_note(st, text)?;
+    if let Some(t) = t {
+        sync(st, t);
+        notify(app);
+    }
+    Ok(())
 }
 
 /// Push the current picture to everyone. Called on every game event.
@@ -615,6 +637,17 @@ fn handle(app: &dyn Host, st: &Shared, t: &Arc<Table>, id: u64, msg: &Value) {
             let text: String = msg["text"].as_str().unwrap_or("").chars().take(1000).collect();
             let name = t.inner.lock().ok().and_then(|g| g.seats.iter().find(|s| s.id == id).map(|s| s.name.clone())).unwrap_or_default();
             talk(app, t, &name, &text);
+        }
+        "note" => {
+            // The party's shared page: anyone seated may write it, and everyone sees the change.
+            let text: String = msg["text"].as_str().unwrap_or("").chars().take(MAX_NOTE).collect();
+            if let Err(e) = host_note(app, st, Some(t), &text) {
+                if let Ok(g) = t.inner.lock() {
+                    if let Some(tx) = g.seats.iter().find(|s| s.id == id).and_then(|s| s.tx.as_ref()) {
+                        let _ = tx.send(json!({ "t": "notice", "text": e }));
+                    }
+                }
+            }
         }
         _ => {}
     }

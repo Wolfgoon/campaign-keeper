@@ -627,6 +627,20 @@ fn table_talk(app: AppHandle, s: S, text: String) -> R<()> {
     Ok(())
 }
 
+/// The party's shared notes page, for the host's own Party view.
+#[tauri::command]
+fn party_notes(s: S) -> R<String> {
+    let d = dir(&s)?;
+    Ok(std::fs::read_to_string(d.join(table::NOTE_FILE)).unwrap_or_default())
+}
+
+/// Save the party's notes from the host's app. Players write the same page through the table.
+#[tauri::command]
+fn party_note(app: AppHandle, s: S, text: String) -> R<()> {
+    let t = s.net.lock().map_err(|_| "state lost")?.table.clone();
+    table::host_note(&app, &s.game, t.as_ref(), &text)
+}
+
 #[tauri::command]
 async fn table_scan() -> R<Vec<Value>> {
     off_ui(|| net::discovery::scan(3)).await
@@ -816,6 +830,7 @@ pub fn run() {
             memory_status, memory_list, memory_search, memory_add, memory_update, memory_delete, memory_catch_up,
             scribe_run, scribe_presets, scribe_apply, scribe_restore, table_open, table_close, table_state, table_decide,
             table_auto_admit, table_host_character, table_host_action, table_send_now, table_talk, table_scan,
+            party_notes, party_note,
             client_join, client_send, client_leave, pair_parse,
             app_info, account_status, account_begin, account_poll, account_sign_out, account_stories, account_fetch, account_remove, sync_now
         ])

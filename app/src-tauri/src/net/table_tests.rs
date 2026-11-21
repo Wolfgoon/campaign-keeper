@@ -593,6 +593,43 @@ fn a_browser_player_plays_beside_an_app_player() {
 }
 
 #[test]
+fn the_party_shares_one_page_and_each_player_gets_only_their_own_sheet() {
+    let w = world(true, true);
+    w.st.lock().unwrap().rules.enabled = true;
+    let ann = seated(&w, "Ann", "Aria");
+    let mut bob = w.browser("Bob");
+    bob.wait("welcome");
+    bob.say(json!({ "t": "claim", "character": "Brom", "new": true }));
+    until("Brom is Bob's", || w.seat("Bob").character == "Brom");
+
+    // A browser player writes the shared page: it lands in the campaign's files...
+    bob.say(json!({ "t": "note", "text": "# Party Notes\n\n- The innkeeper lied.\n" }));
+    let file = w.root.join("camp").join("04_Quests").join("party_notes.md");
+    until("the note is saved", || std::fs::read_to_string(&file).map(|t| t.contains("innkeeper")).unwrap_or(false));
+    // ...and in every other player's picture of the table.
+    let m = loop {
+        let m = ann.wait("table");
+        if m["note"].as_str().is_some_and(|n| n.contains("innkeeper")) {
+            break m;
+        }
+    };
+    // Each player only ever gets their own sheet.
+    assert_eq!(m["sheet"]["name"], "Aria");
+    assert!(m.get("sheets").is_none());
+
+    // The host writes the same page; the browser player sees the change at once.
+    host_note(&*w.host, &w.st, Some(&w.t), "# Party Notes\n\n- The innkeeper was telling the truth.\n").unwrap();
+    let m = loop {
+        let m = bob.wait("table");
+        if m["note"].as_str().is_some_and(|n| n.contains("truth")) {
+            break m;
+        }
+    };
+    assert_eq!(m["sheet"]["name"], "Brom");
+    assert!(std::fs::read_to_string(&file).unwrap().contains("truth"));
+}
+
+#[test]
 fn a_browser_needs_the_code_and_guessing_gets_it_blocked() {
     let w = world(false, true);
     let guess = |code: &str| browser(w.web(), json!({ "t": "hello", "name": "Mallory", "token": "m", "protocol": PROTOCOL, "code": code }));

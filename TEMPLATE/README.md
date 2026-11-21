@@ -18,7 +18,7 @@ Everything for this campaign is kept here, so you can save the story and pick it
 | `01_Character/` | The player character's sheet (copy `_TEMPLATE.md`) |
 | `02_World/` | World Info: setting overview, locations, factions, items & lore |
 | `03_NPCs/` | One file per important NPC (copy `_TEMPLATE.md`); small parts go in `minor_npcs.md` |
-| `04_Quests/` | Active and completed quests and open threads |
+| `04_Quests/` | Active and completed quests, the party's shared notes, and open threads |
 | `05_Memory/` | Pinned Memory: facts the GM must always keep true |
 | `06_Sessions/` | A log for each play session (copy `_TEMPLATE.md`) |
 | `07_Maps/` | Known locations and how they connect |

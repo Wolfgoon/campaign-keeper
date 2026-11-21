@@ -34,6 +34,12 @@
   let closedActivities = $state<number[]>([]);
   let openActivity = $state<any>(null);
   let action = $state("");
+  // How the next action is taken: as a deed (the default) or as words.
+  let saying = $state("do");
+  // The party's shared page: everyone at the table reads and writes the same file.
+  let noteText = $state("");
+  let noteSaved = $state("");
+  const noteChanged = $derived(noteText !== noteSaved);
   let newChar = $state("");
   let talk = $state("");
   let talkLog = $state<any[]>([]);
@@ -125,16 +131,37 @@
 
   const me = $derived(t?.table?.seats?.find((s: any) => s.id === you));
   const offers = $derived(activities.filter((a) => !closedActivities.includes(a.id)));
+  // One-tap actions: they fill the box, so nothing is sent that the player hasn't seen.
+  const QUICK = [["👀 Look", "I take a careful look around."], ["👂 Listen", "I listen for a moment."], ["⏳ Wait", "I wait and watch."]];
 
   function send(msg: any) {
     call("client_send", { msg }).catch(toast);
   }
 
   function submit(pass = false) {
-    if (!pass && !action.trim()) return;
+    if (pass) {
+      stopSpeaking();
+      send({ t: "submit", pass });
+      action = "";
+      return;
+    }
+    const text = action.trim();
+    if (!text) return;
+    // Their own punctuation wins; otherwise the mode decides how it's heard.
+    const body = /^[>/"~]/.test(text) ? text : saying === "say" ? `"${text}"` : `> ${text}`;
     stopSpeaking();
-    send({ t: "submit", action: action.trim(), pass });
+    send({ t: "submit", action: body });
     action = "";
+  }
+
+  function openSide(id: string) {
+    side = id;
+    sideOpen = true;
+  }
+
+  function saveNote() {
+    noteSaved = noteText;
+    send({ t: "note", text: noteText });
   }
 
   function exit() {
@@ -176,6 +203,11 @@
           labels = m.labels ?? {}; maps = m.maps ?? [];
           activities = m.activities ?? [];
           talkLog = m.state.table?.talk ?? talkLog;
+          // Never pull the page out from under someone typing: their words win until they save.
+          if (!noteChanged) {
+            noteText = m.note ?? "";
+            noteSaved = noteText;
+          }
           break;
         case "transcript":
           // Follow the story only if they're at the bottom: never yank someone reading back.
@@ -259,6 +291,17 @@
         {#each offers as a (a.id)}
           <button onclick={() => (openActivity = a)}>{a.icon ?? "✍"} {a.title ?? "An activity is open"}</button>
         {/each}
+        <div class="row modes" role="group" aria-label="Actions">
+          <button class:on={saying === "do"} aria-pressed={saying === "do"} title="Your next words are something your character does" onclick={() => (saying = "do")}>&gt; Do</button>
+          <button class:on={saying === "say"} aria-pressed={saying === "say"} title="Your next words are something your character says" onclick={() => (saying = "say")}>" Say</button>
+          {#each QUICK as [label, words]}
+            <button class="ghost small" onclick={() => (action = words)}>{label}</button>
+          {/each}
+          <span class="grow"></span>
+          <button class="ghost small" onclick={() => openSide("party")}>👥 Party</button>
+          <button class="ghost small" onclick={() => openSide("status")}>📊 Sheet</button>
+          <button class="ghost small" onclick={() => openSide("note")}>📜 Notes</button>
+        </div>
         <textarea rows="2" bind:value={action} placeholder={'What do you do?   > act   "speak"   /status'} aria-label="Your action" onkeydown={(e) => { if (e.key === "Enter" && !e.shiftKey && !platform.mobile) { e.preventDefault(); submit(); } }}></textarea>
         <div class="row">
           <button class="primary" disabled={!me?.character} onclick={() => submit()}>Lock in</button>
@@ -275,8 +318,8 @@
     <aside class="side" class:open={sideOpen || !me?.character}>
       <div class="side-tabs">
         {#if me?.character}<button class="tab narrow-only" style="flex:none" aria-label="Back to the story" onclick={() => (sideOpen = false)}>← Story</button>{/if}
-        {#each [["party", "👥 Party"], ["status", "Status"], ["map", "🗺"], ["music", "🎵"], ["voices", "💬"]] as [id, label]}
-          <button class="tab" class:on={side === id} aria-label={id} onclick={() => (side = id)}>{label}</button>
+        {#each [["party", "👥"], ["status", "Status"], ["note", "📜"], ["map", "🗺"], ["music", "🎵"], ["voices", "💬"]] as [id, label]}
+          <button class="tab" class:on={side === id} aria-label={id === "note" ? "Party notes" : id === "party" ? "Party" : id} onclick={() => (side = id)}>{label}</button>
         {/each}
       </div>
       <div class="side-body col">
@@ -302,6 +345,14 @@
         {:else if side === "status"}
           {#if sheet}<Status {sheet} {labels} readOnly onSpend={(kind: string, name: string) => send({ t: "spend", kind, name })} />
           {:else}<p class="small muted">Your status window appears here once the host's game uses the rules and you've chosen a character.</p>{/if}
+        {:else if side === "note"}
+          <h3>Party notes</h3>
+          <p class="small muted">Everyone at the table can read and write this page. The GM sees it with the campaign's files.</p>
+          <textarea rows="10" bind:value={noteText} placeholder="What the party has found, promised, or plans to do…" aria-label="Party notes"></textarea>
+          <div class="row">
+            <button class="primary" disabled={!noteChanged} onclick={saveNote}>Save the notes</button>
+            <span class="small muted">{noteChanged ? "Unsaved changes" : "Saved"}</span>
+          </div>
         {:else if side === "map"}
           <Maps list={maps} />
         {:else if side === "music"}

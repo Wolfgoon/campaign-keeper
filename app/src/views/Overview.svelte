@@ -5,11 +5,17 @@
   let { go } = $props();
   let o = $state<any>(null);
   let rules = $state<any>(null);
+  let table = $state<any>(null);
 
   onMount(async () => {
     o = await call("overview");
     rules = await call("rpg_state");
+    table = await call("table_state");
   });
+
+  // A host playing a character sees only that sheet here, just as their players do.
+  const mine = $derived<string | null>(table && !table.host_is_gm ? (table.host_character ?? "") : null);
+  const party = $derived((Object.values(rules?.sheets ?? {}) as any[]).filter((c) => mine === null || String(c.name).toLowerCase() === mine.toLowerCase()));
 </script>
 
 <div class="pad scroll grow">
@@ -18,7 +24,7 @@
     <p class="muted">{o.setting ?? "No setting yet."}{o.difficulty ? ` · ${o.difficulty}` : ""}</p>
     <div class="row" style="margin-bottom:14px">
       <button class="primary" onclick={() => go("play")}>▶ Play</button>
-      <button onclick={() => go("scribe")}>✏ Update files with the Scribe</button>
+      <button onclick={() => go("host")}>🛠 Host tools</button>
     </div>
     <div class="row" style="gap:22px;margin-bottom:16px">
       {#each Object.entries(o.counts) as [k, v]}
@@ -39,8 +45,7 @@
     {#if rules?.enabled}
       <div class="card" style="margin-top:14px">
         <h2>Party</h2>
-        {#each Object.values(rules.sheets) as s}
-          {@const c = s as any}
+        {#each party as c}
           <p class="mono small">{c.name}: level {c.level} {c.class} · HP {c.hp.cur}/{c.hp.max}</p>
         {/each}
       </div>

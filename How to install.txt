@@ -24,7 +24,7 @@ PLAY ON YOUR PHONE WITH YOUR COMPUTER'S CLAUDE CODE (via Tailscale)
      phone, and sign in to the same account on both. Each device gets
      a Tailscale name, like "my-pc", shown in the Tailscale app.
   2. On the computer: set up Claude Code in Settings, open the
-     campaign, then Play tab > Table > Open the table. Leave the
+     campaign, then Host tab > Table > Open the table. Leave the
      computer on with Campaign Keeper open (stop it from sleeping).
   3. On the phone, open Campaign Keeper and tap "Join a friend's game",
      then paste the invitation from the computer's table panel (it
@@ -42,7 +42,7 @@ PLAY ON YOUR PHONE WITH YOUR COMPUTER'S CLAUDE CODE (via Tailscale)
 
 ON AN IPHONE, IPAD, OR ANYTHING ELSE WITH A WEB BROWSER
   To join a friend's game there is nothing to install. The host opens
-  their table (Play tab > Table > Open the table) and sends you a link
+  their table (Host tab > Table > Open the table) and sends you a link
   and a join code. Open the link in your browser, type your name and
   the code, and play. On the same Wi-Fi it just works; from somewhere
   else, both of you need a free VPN such as Tailscale.

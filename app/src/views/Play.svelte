@@ -10,7 +10,6 @@
   import Entry from "./Entry.svelte";
   import Status from "./Status.svelte";
   import Activity from "./Activity.svelte";
-  import Table from "./Table.svelte";
   import Sound from "./Sound.svelte";
   import Voices from "./Voices.svelte";
 
@@ -178,6 +177,8 @@
   });
 
   const pctContext = $derived(info.context_limit ? Math.min(100, (info.last_prompt_tokens / info.context_limit) * 100) : 0);
+  // A host playing a character sees that character's sheet, exactly as their players do.
+  const hostPlays = $derived<string | null>(table && !table.host_is_gm ? (table.host_character ?? "") : null);
 </script>
 
 <div class="play">
@@ -194,7 +195,7 @@
             <button onclick={() => begin("files")}>▶ Resume from the campaign files</button>
             <div class="row">
               <button class="ghost" onclick={copyGame}>📋 Copy for a chat elsewhere</button>
-              <button class="ghost" onclick={() => { side = "table"; sideOpen = true; }}>👥 Play together</button>
+              <button class="ghost" onclick={() => go("host")}>👥 Play together</button>
             </div>
           </div>
         {/if}
@@ -218,8 +219,9 @@
           <button class="ghost small" disabled={busy} onclick={() => send("/continue")}>Continue</button>
           <button class="ghost small" disabled={busy} onclick={() => send("/scene")}>Scene</button>
           <button class="ghost small" disabled={busy} onclick={() => send("/save")}>💾 /save</button>
-          <button class="ghost small" onclick={() => go("scribe")}>✏ Scribe</button>
-          <button class="small narrow-only" onclick={() => { sideOpen = true; loadSide(); }}>☰ Status, map, table…</button>
+          <button class="ghost small" onclick={() => go("party")}>👥 Party</button>
+          <button class="ghost small" onclick={() => go("host:scribe")}>✏ Scribe</button>
+          <button class="small narrow-only" onclick={() => { sideOpen = true; loadSide(); }}>☰ Status, map, music…</button>
           {#if busy}<button class="small danger" onclick={() => call("stop_turn")}>⏹ Stop</button>{/if}
         </div>
         {#if waitingOnYou}
@@ -256,13 +258,13 @@
   <aside class="side" class:open={sideOpen}>
     <div class="side-tabs">
       <button class="tab narrow-only" style="flex:none" aria-label="Back to the story" onclick={() => (sideOpen = false)}>← Story</button>
-      {#each [["status", "Status"], ["pics", "🖼"], ["map", "🗺"], ["music", "🎵"], ["voices", "💬"], ["table", "👥"]] as [id, name]}
+      {#each [["status", "Status"], ["pics", "🖼"], ["map", "🗺"], ["music", "🎵"], ["voices", "💬"]] as [id, name]}
         <button class="tab" class:on={side === id} aria-label={id} onclick={() => { side = id; loadSide(); }}>{name}</button>
       {/each}
     </div>
     <div class="side-body">
       {#if side === "status"}
-        <Status bind:rules />
+        <Status bind:rules only={hostPlays} />
       {:else if side === "pics"}
         {#if !pics.length}<p class="small muted">None yet. The GM draws maps, items and characters when they matter to the story.</p>{/if}
         {#each pics as p}<Art {p} />{/each}
@@ -279,8 +281,6 @@
         {/each}
       {:else if side === "voices"}
         <Voices {cfg} />
-      {:else}
-        <Table bind:table {cfg} />
       {/if}
     </div>
   </aside>
