@@ -113,13 +113,30 @@ and `app/src-tauri/tauri.conf.json`. The Android CLI regenerated
    3.0.0, so it upgrades in place.
 3. `README.md`'s download table now points at the 3.0.1 files.
 
+## Merge with origin/main (2026-11-21)
+
+Everything above was committed as `5fc11c1` ("yes"). `origin/main` then turned out to have three
+older commits from P-Hoep (`ea9a3fc`, `878ca4c`, `4b1d5dc` "deepseeks"), so it was merged in as
+`2dd9eba` and pushed to `main`.
+
+- Conflicts (`config.rs`, `engine/openai.rs`, `scribe.rs`, `Settings.svelte`) were resolved in
+  favour of this branch. Origin's separate `deepseek` engine mode (`cfg.deepseek_key`,
+  `Config::resolved_deepseek_key`, `openai::{send_post, read_sse_stream, stream_deepseek,
+  once_deepseek}`) is replaced here by the DeepSeek preset on Other models
+  (`https://api.deepseek.com/v1`, `deepseek-v4-flash`) plus the `DEEPSEEK_API_KEY` fallback.
+- `engine/mod.rs` and `app/src/lib/api.ts` were auto-merged with origin's routing into that removed
+  client, so both were restored to this branch's versions; otherwise `deepseek-flash` would have
+  appeared as a pickable model under the Anthropic engines.
+- Kept from origin: its Linux artifacts (`Campaign Keeper 2.0.7.AppImage`, `… 2.0.7.dmg`) and the
+  `/TEMPLATE_2` line in `.gitignore`.
+- After resolving: `cargo test --lib` 143 passed, 0 failed; `svelte-check` 0 errors, 4 warnings.
+
 ## Still to do
 1. Paste the DeepSeek key in Settings → Other models (or set `DEEPSEEK_API_KEY`): this machine is
    pointed at DeepSeek V4 Flash but no key was available to store.
-2. Optional: delete the old `installers/*3.0.0*` and `*2.3.0*` files once the owner confirms nobody
-   still has them.
-3. Commit only when the owner asks. End the commit message with the attribution line the owner's tools require.
-4. Not tested by hand yet: start a game with the AD System on and check that the GM writes `<rpg>` lines in the format
+2. Optional: delete the old `installers/*3.0.0*` and `*2.3.0*` files (they are tracked and pushed;
+   removing them is a commit of its own) once the owner confirms nobody still has them.
+3. Not tested by hand yet: start a game with the AD System on and check that the GM writes `<rpg>` lines in the format
    given in `litrpg_ad.md`. Pairing has only been exercised by the automated table tests, not with a real phone.
 
 ## Android build command (for next time)
@@ -128,4 +145,4 @@ $env:ANDROID_HOME="$env:LOCALAPPDATA\Android\Sdk"; $env:NDK_HOME="$env:ANDROID_H
 cd app; npx tauri android build --apk --target aarch64
 ```
 Output: `app/src-tauri/gen/android/app/build/outputs/apk/arm64/release/app-arm64-release.apk` -> copy to
-`installers/Campaign Keeper 3.0.0 (Android).apk`. If it stops on the symlink error, run the jniLibs fallback above.
+`installers/Campaign Keeper 3.0.1 (Android).apk`. If it stops on the symlink error, run the jniLibs fallback above.
