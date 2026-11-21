@@ -318,7 +318,8 @@ has one.
 - **Fix.** Those lines are now `World::system_line`, tried on the raw line **and again with the character's
   name taken off**, so `define …` and `Paul: define …` are the same world change. New `rpg::world_line`
   (`define`, `rename`, `lens`, `crystal`, `impurity`, `battery`) tells `game::unnamed_refusal` which lines
-  belong to the world and never wait for a name.
+  belong to the world and never wait for a name. `Rules::apply_one` reads `rename` / `rename settled` past a
+  name too, so `Aria: rename settled` still ends the late-rules ask.
 - **More System control: `class change <class>`.** `Sheet::change_class` (verbs
   `class change|swap|replace|reclass|set`) reshapes the class a character holds: the tier they earned
   stands, the old class's skills stay learnt, the new class's growth applies from the next level, and the
@@ -338,12 +339,14 @@ has one.
   are, and the GM can now define *night shift* and shift Paul's class in the game already in progress.
 - **Shipped for Windows as 3.0.4** (2026-11-21), exe only. Bumped to 3.0.4 in `app/package.json`,
   `app/src-tauri/Cargo.toml`, `app/src-tauri/Cargo.lock` and `app/src-tauri/tauri.conf.json`.
-  `cd app; npm run tauri build` gave `installers/Campaign Keeper Setup 3.0.4.exe` — 7,330,587 bytes,
+  `cd app; npm run tauri build` gave `installers/Campaign Keeper Setup 3.0.4.exe` — 7,331,920 bytes,
   ProductVersion and FileVersion 3.0.4, SHA-256
-  `864eea206b24a31b66481c5392a5875726562b86c52ee95d1a9b10d9de3fb569`, copied from
+  `33d2698c680cca1ea9e76260071564abecdbd5a65a4d487471af03c052703836`, copied from
   `app/src-tauri/target/release/bundle/nsis/Campaign Keeper_3.0.4_x64-setup.exe`. The binary carries the fix
   (`YOU ARE THE SYSTEM`, `class change <class>`, `CLASS CHANGE`, `reshapes the one they hold` are in it).
   `dist/` rebuilt to the same `index-C1R1GU3f.js` (no UI change). `README.md`'s download table and
-  `How to install.txt` point at the 3.0.4 file.
+  `How to install.txt` point at the 3.0.4 file. (A first build, 7,330,587 bytes / `864eea20…`, was made
+  before the `Aria: rename settled` change and then replaced by this one; commit 0565144's message quotes the
+  first hash.)
 - **Android is still 3.0.2** and does not have any of the 3.0.3/3.0.4 fixes.
 

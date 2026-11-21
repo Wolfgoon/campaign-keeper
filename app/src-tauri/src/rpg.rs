@@ -519,7 +519,10 @@ impl Rules {
 
     /// One `<rpg>` line, for one character.
     fn apply_one(&mut self, line: &str, default_char: &str) -> Result<String, String> {
-        let low = line.trim_start_matches('-').trim().to_ascii_lowercase();
+        // A name in front of a world line changes nothing: `Aria: rename …` is `rename …`.
+        let t = line.trim_start_matches('-').trim();
+        let bare = if self.names_character(t) { t.split_once(':').map_or(t, |(_, b)| b.trim()) } else { t };
+        let low = bare.to_ascii_lowercase();
         // The table kept the sheet's words: nothing changes, and the asking ends.
         if matches!(low.as_str(), "rename settled" | "words settled" | "settle words") {
             self.terms_pending = false;
@@ -1494,6 +1497,14 @@ mod tests {
         r.terms_pending = true;
         assert!(r.apply("rename skills ->", "Wren").is_err());
         assert!(r.terms_pending);
+        // A name in front of a world line is the same world change, and settles the same way.
+        r.terms_pending = true;
+        assert!(r.apply("Wren: rename speed -> Haste", "Wren").is_ok());
+        assert!(!r.terms_pending, "a named rename settles the words too");
+        assert_eq!(r.view("Wren").unwrap()["labels"]["speed"], "Haste");
+        r.terms_pending = true;
+        assert!(r.apply("Wren: rename settled", "Wren").is_ok());
+        assert!(!r.terms_pending);
     }
 
     #[test]
