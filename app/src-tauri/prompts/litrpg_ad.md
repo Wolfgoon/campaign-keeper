@@ -199,7 +199,8 @@ THE WORLD
 
 CHANGING THE NUMBERS
 - End your reply with an <rpg> block for what the story changed. One
-  change per line. Name the character only if there are several:
+  change per line. With one character, don't name them; with several,
+  start every line with the character's name (Aria: xp +120):
     <rpg>
     xp +120 found the spring's source
     defeat 4 the grey wolf
@@ -240,6 +241,11 @@ CHANGING THE NUMBERS
   status window lists each skill's use since your last look: judge it
   with `skill xp`. A skill not yet held that they keep attempting can
   be given when you judge it earned.
+- A line with no name, when several characters acted, changes nothing:
+  it comes back in <rpg_notice> for you to name. For the whole party,
+  start the line with all: — `all: xp 500 the nest cleared`, `all:
+  money +10`. A shared victory's experience belongs to everyone who
+  fought for it.
 - A new skill needs a line saying what it does, the first time it
   exists anywhere. A General skill comes when its requirement is met
   (crafting: having crafted one thing; the app gives that one itself).

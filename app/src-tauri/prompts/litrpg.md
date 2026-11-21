@@ -31,7 +31,8 @@ RESOLVED CHECKS
 CHANGING THE NUMBERS
 - For anything a check didn't already cover (a found item, a purchase,
   rest, poison, a story reward), end your reply with an <rpg> block.
-  One change per line. Name the character only if there are several:
+  One change per line. With one character, don't name them; with
+  several, start every line with the character's name:
     <rpg>
     item + Rusted Key
     item - Lamp oil x2
@@ -47,6 +48,14 @@ CHANGING THE NUMBERS
     perk + Tidewise: never gets lost on the shore at low tide
     xp +40
     </rpg>
+  In a game with several characters, the same lines are written
+  Aria: xp +40, Aria: hp -3.
+- A line that doesn't say whose it is, when several characters acted,
+  changes nothing: it comes back in <rpg_notice> for you to name.
+- For the whole party, start the line with all: and it lands on every
+  character. Shared rewards are the party's, experience included:
+    all: xp +40
+    all: money +10
 - Conditions' numbers apply to every check while they last.
 - New skills always start at rank 0. You can't raise a rank, a level or
   an attribute: those are earned through the rules.

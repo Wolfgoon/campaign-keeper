@@ -412,6 +412,15 @@ pub struct Rules {
     pub terms_pending: bool,
 }
 
+/// A line meant for every character at once: `all: xp +40`, `everyone: money +10`.
+pub fn party_line(line: &str) -> Option<&str> {
+    let t = line.trim().trim_start_matches('-').trim();
+    ["all", "everyone", "party", "the party"].iter().find_map(|p| {
+        let head = t.get(..p.len())?;
+        (head.eq_ignore_ascii_case(p) && t.get(p.len()..p.len() + 1) == Some(":")).then(|| t.get(p.len() + 1..).map(str::trim).unwrap_or_default())
+    })
+}
+
 impl Rules {
     pub fn is_ad(&self) -> bool {
         self.ruleset == "ad"
@@ -439,6 +448,68 @@ impl Rules {
 
     /// One `<rpg>` line, under whichever rules this game uses.
     pub fn apply(&mut self, line: &str, default_char: &str) -> Result<String, String> {
+        match party_line(line) {
+            Some(rest) => self.apply_party(rest),
+            None => self.apply_one(line, default_char),
+        }
+    }
+
+    /// `all: xp +40`: the same change for every character, one sheet at a time.
+    fn apply_party(&mut self, rest: &str) -> Result<String, String> {
+        if rest.is_empty() {
+            return Err("all: needs a change after it (all: xp +40)".into());
+        }
+        if rest.get(..6).is_some_and(|w| w.eq_ignore_ascii_case("rename")) {
+            return Err("a rename is the story's, not one character's".into());
+        }
+        let names = self.names();
+        if names.is_empty() {
+            return Err("no character sheets yet".into());
+        }
+        let (mut done, mut refused) = (Vec::new(), Vec::new());
+        for n in names {
+            match self.apply_one(rest, &n) {
+                // For the System alone (item 73): never shown to the player, whoever it was.
+                Ok(m) if m.starts_with(crate::ad::SYSTEM_ONLY) => done.push(m),
+                Ok(m) if m.starts_with(&format!("{n}:")) => done.push(m),
+                Ok(m) => done.push(format!("{n}: {m}")),
+                Err(e) => refused.push(format!("{n}: {e}")),
+            }
+        }
+        if refused.is_empty() {
+            return Ok(done.join(" · "));
+        }
+        if done.is_empty() {
+            return Err(refused.join(" · "));
+        }
+        refused.push("the rest took it".into());
+        Err(refused.join(" · "))
+    }
+
+    /// Does a line say whose change it is ("Aria: xp +40")?
+    pub fn names_character(&self, line: &str) -> bool {
+        let line = line.trim().trim_start_matches('-').trim();
+        match line.split_once(':') {
+            Some((a, _)) if !a.trim().is_empty() => {
+                if self.is_ad() {
+                    self.ad.sheet_key(a).is_some()
+                } else {
+                    self.sheet_key(a).is_some()
+                }
+            }
+            _ => false,
+        }
+    }
+
+    /// What to tell a GM whose line should have said whose change it is.
+    pub(crate) fn say_whose(&self) -> String {
+        let mut names = self.names();
+        names.sort();
+        format!("say whose it is: {} (or all: for everyone)", names.join(", "))
+    }
+
+    /// One `<rpg>` line, for one character.
+    fn apply_one(&mut self, line: &str, default_char: &str) -> Result<String, String> {
         let low = line.trim_start_matches('-').trim().to_ascii_lowercase();
         // The table kept the sheet's words: nothing changes, and the asking ends.
         if matches!(low.as_str(), "rename settled" | "words settled" | "settle words") {
@@ -787,7 +858,7 @@ pub fn apply_line(r: &mut Rules, line: &str, default_char: &str) -> Result<Strin
         Some((a, b)) if r.sheet_key(a).is_some() && !a.trim().is_empty() => (a.trim().to_string(), b.trim()),
         _ => (default_char.to_string(), line),
     };
-    let key = r.sheet_key(&who).ok_or_else(|| format!("no sheet for '{who}'"))?;
+    let key = r.sheet_key(&who).ok_or_else(|| if who.trim().is_empty() { r.say_whose() } else { format!("no sheet for '{who}'") })?;
     let level = r.sheets.get(&key).map_or(1, |s| s.level) as i64;
     let (verb, rest) = cmd.split_once(char::is_whitespace).unwrap_or((cmd, ""));
     let verb = verb.to_lowercase();
@@ -1020,6 +1091,96 @@ mod tests {
 
     fn req(skill: &str, band: &str, subject: &str) -> CheckRequest {
         CheckRequest { character: "Wren".into(), skill: skill.into(), subject: subject.into(), difficulty: band.into(), ..Default::default() }
+    }
+
+    /// A second character at the table, so a line has to say whose it is.
+    fn with_bram(mut r: Rules) -> Rules {
+        r.sheets.insert("Bram".into(), Sheet { name: "Bram".into(), ..Sheet::default() });
+        r
+    }
+
+    #[test]
+    fn all_prefixes_a_party_line() {
+        assert_eq!(party_line("all: xp +40"), Some("xp +40"));
+        assert_eq!(party_line("  Everyone: money +10 "), Some("money +10"));
+        assert_eq!(party_line("party: hp +2"), Some("hp +2"));
+        assert_eq!(party_line("all"), None);
+        assert_eq!(party_line("all : xp +40"), None); // the colon comes straight after the word
+        assert_eq!(party_line("Wren: xp +5"), None);
+        assert_eq!(party_line("xp +5"), None);
+    }
+
+    #[test]
+    fn names_character_sees_the_sheets_own_names() {
+        let r = rules();
+        assert!(r.names_character("Wren: xp +5"));
+        assert!(r.names_character("- wren: hp -1"));
+        assert!(!r.names_character("xp +5"));
+        assert!(!r.names_character("gear Hand lens | Observation | +1"));
+        assert!(!r.names_character("perk + Tidewise: never lost at low tide"));
+    }
+
+    #[test]
+    fn a_party_line_changes_every_character() {
+        let mut r = with_bram(rules());
+        let m = r.apply("all: xp +40", "Wren").unwrap();
+        assert_eq!(r.sheets["Wren"].xp, 40);
+        assert_eq!(r.sheets["Bram"].xp, 40, "{m}");
+        assert!(m.contains("Wren") && m.contains("Bram"), "{m}");
+        // A change one character can't take doesn't undo the others, but the GM hears about it.
+        if let Some(w) = r.sheets.get_mut("Wren") {
+            w.money = 20;
+        }
+        let e = r.apply("all: money -5", "").unwrap_err();
+        assert!(e.contains("Bram"), "{e}");
+        assert_eq!(r.sheets["Wren"].money, 15);
+        assert_eq!(r.sheets["Bram"].money, 0);
+    }
+
+    #[test]
+    fn a_party_line_refuses_a_rename() {
+        let mut r = with_bram(rules());
+        assert!(r.apply("all: rename stat Might -> Grit", "Wren").is_err());
+        assert!(r.labels.is_empty());
+        assert!(r.apply("all:", "Wren").is_err());
+    }
+
+    #[test]
+    fn an_unnamed_line_with_two_characters_says_whose_it_should_be() {
+        let mut r = with_bram(rules());
+        let e = apply_line(&mut r, "xp +40", "").unwrap_err();
+        assert!(e.contains("Wren") && e.contains("Bram"), "{e}");
+        // One character at the table still gets an unnamed line, as it always has.
+        let mut solo = rules();
+        assert!(apply_line(&mut solo, "xp +40", "").is_ok());
+        assert_eq!(solo.sheets["Wren"].xp, 40);
+    }
+
+    /// The AD System's rules, with two characters behind two status windows.
+    fn ad_table() -> Rules {
+        let mut r = ad_rules();
+        let base = crate::ad::STATS.iter().map(|s| (s.to_string(), 10)).collect();
+        let sheet = crate::ad::Sheet::new("Bram", "human", base, &r.ad.defs);
+        r.ad.sheets.insert("Bram".into(), sheet);
+        r
+    }
+
+    #[test]
+    fn a_party_line_reaches_every_status_window() {
+        let mut r = ad_table();
+        let m = r.apply("all: xp 1000", "").unwrap();
+        assert!(m.contains("Wren") && m.contains("Bram"), "{m}");
+        for n in ["Wren", "Bram"] {
+            assert!(r.ad.sheets[n].level > 1, "{n} stayed at level 1: {m}");
+        }
+    }
+
+    #[test]
+    fn the_system_too_asks_whose_line_it_is() {
+        let mut r = ad_table();
+        let e = r.apply("xp 1000", "").unwrap_err();
+        assert!(e.contains("Wren") && e.contains("Bram"), "{e}");
+        assert_eq!(r.ad.sheets["Wren"].level, 1);
     }
 
     #[test]

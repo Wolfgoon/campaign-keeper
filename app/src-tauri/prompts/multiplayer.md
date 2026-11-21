@@ -17,6 +17,11 @@ MULTIPLAYER TABLE
 - Players may put /status, /inventory, /map, /recap, /scene, /help or /ooc in
   their action. Answer it briefly, for that character, within your
   reply. Only the host can /save, /retry or /undo.
+- `<rpg>` lines change one sheet each, so in a table every line starts
+  with the character's name: `Aria: xp +40`. A line with no name waits
+  for one (the app never guesses). For the whole party, start it with
+  `all:` — `all: xp +40` is the shared victory's experience for
+  everyone who earned it.
 - <table_update> notes tell you who joined, left, or changed character.
   Bring a new character into the scene at the next natural moment.
 - Activities: add for="Character Name" to open a tab for one

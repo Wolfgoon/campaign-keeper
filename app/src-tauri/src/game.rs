@@ -416,7 +416,7 @@ fn run_turn(app: &AppHandle, st: &Shared, p: &Pending) -> Result<(), String> {
             entry.extra.insert("saved_as".into(), json!(f));
         }
     }
-    apply_rpg(&dir, &mut s, &parsed, &mut entry)?;
+    apply_rpg(&dir, &mut s, &parsed, &mut entry, &p.actions)?;
     if reply.truncated {
         note(app, "Cut off: this reply hit the output limit (see Settings).");
     }
@@ -685,11 +685,13 @@ fn apply_maps(dir: &Path, parsed: &tags::Parsed, s: &mut State, entry: &mut Entr
 }
 
 /// Apply what the GM's reply changed. A refused change goes back to the GM next turn.
-fn apply_rpg(dir: &Path, s: &mut State, parsed: &tags::Parsed, entry: &mut Entry) -> Result<(), String> {
+/// `acted` is (character, words) for every action the GM was answering this turn.
+fn apply_rpg(dir: &Path, s: &mut State, parsed: &tags::Parsed, entry: &mut Entry, acted: &[(String, String)]) -> Result<(), String> {
     if !s.rules.enabled {
         return Ok(());
     }
     let mut changes = Vec::new();
+    let default = default_character(&s.rules, acted);
     if s.rules.is_ad() {
         // The System saw the use since its last look in the status window it just answered.
         s.rules.ad.looked();
@@ -703,8 +705,13 @@ fn apply_rpg(dir: &Path, s: &mut State, parsed: &tags::Parsed, entry: &mut Entry
                 s.rules.ad.sheets.insert(key.unwrap_or_else(|| sheet.name.clone()), sheet);
             }
         }
-        let default = s.rules.names().into_iter().next().unwrap_or_default();
         for line in &parsed.rpg_lines {
+            let unnamed = unnamed_refusal(&s.rules, line, &default);
+            if let Some(e) = unnamed {
+                // AD refusals go to the System alone, as every other refused line does.
+                s.session.rpg_notices.push(format!("Refused: {line} ({e})"));
+                continue;
+            }
             match s.rules.apply(line, &default) {
                 // For the System alone (item 73): back to the GM next turn, never shown to the player.
                 Ok(m) if m.starts_with(crate::ad::SYSTEM_ONLY) => s.session.rpg_notices.push(m.trim_start_matches(crate::ad::SYSTEM_ONLY).to_string()),
@@ -729,9 +736,15 @@ fn apply_rpg(dir: &Path, s: &mut State, parsed: &tags::Parsed, entry: &mut Entry
             }
         }
     }
-    let default = s.rules.sheets.keys().next().cloned().unwrap_or_default();
     for line in &parsed.rpg_lines {
-        match rpg::apply_line(&mut s.rules, line, &default) {
+        let unnamed = unnamed_refusal(&s.rules, line, &default);
+        if let Some(e) = unnamed {
+            let m = format!("Refused: {line} ({e})");
+            changes.push(m.clone());
+            s.session.rpg_notices.push(m);
+            continue;
+        }
+        match s.rules.apply(line, &default) {
             Ok(m) => changes.push(m),
             Err(e) => {
                 changes.push(format!("Refused: {line} ({e})"));
@@ -744,6 +757,30 @@ fn apply_rpg(dir: &Path, s: &mut State, parsed: &tags::Parsed, entry: &mut Entry
         entry.rpg = Some(json!({ "changes": changes }));
     }
     Ok(())
+}
+
+/// Whose sheet an unnamed line changes: the character who acted, if only one did; failing that, the
+/// only sheet there is. With several characters, an empty answer means the line has to say whose.
+fn default_character(rules: &Rules, acted: &[(String, String)]) -> String {
+    let mut who: Vec<String> = acted.iter().map(|(c, _)| c.trim().to_string()).filter(|c| !c.is_empty()).collect();
+    who.sort();
+    who.dedup();
+    if who.len() == 1 {
+        return who.remove(0);
+    }
+    let names = rules.names();
+    if names.len() == 1 { names.into_iter().next().unwrap_or_default() } else { String::new() }
+}
+
+/// An unnamed line needs a single character it can belong to. With several at the table, guessing
+/// picked one sheet for everyone (the host's, as often as not), so the line waits for a name instead.
+fn unnamed_refusal(rules: &Rules, line: &str, default: &str) -> Option<String> {
+    if !default.is_empty() || rpg::party_line(line).is_some() || rules.names_character(line) {
+        return None;
+    }
+    let mut names = rules.names();
+    names.sort();
+    Some(if names.is_empty() { "no character sheets yet".to_string() } else { format!("say whose it is: {} (or all: for everyone)", names.join(", ")) })
 }
 
 /// The slow memory work, off the player's turn. None of it blocks the next action.
@@ -896,5 +933,78 @@ mod tests {
     fn nothing_to_take_back_is_an_error_not_a_crash() {
         let (mut s, d) = state(&[]);
         assert!(rewind(&d, &mut s, false).is_err());
+    }
+
+    fn table_state(names: &[&str]) -> (State, PathBuf) {
+        let (mut s, d) = state(&[]);
+        s.rules.enabled = true;
+        for n in names {
+            s.rules.sheets.insert((*n).into(), rpg::Sheet { name: (*n).into(), ..Default::default() });
+        }
+        (s, d)
+    }
+
+    #[test]
+    fn experience_goes_to_the_character_who_acted() {
+        let (mut s, d) = table_state(&["Aria", "Bram"]);
+        let reply = "<rpg>\nxp +20\n</rpg>";
+        let parsed = tags::parse(reply);
+        let mut e = Entry::text("assistant", reply);
+        apply_rpg(&d, &mut s, &parsed, &mut e, &[("Bram".into(), "I swing at it".into())]).unwrap();
+        assert_eq!(s.rules.sheets["Bram"].xp, 20);
+        assert_eq!(s.rules.sheets["Aria"].xp, 0, "the host's character was never touched");
+    }
+
+    #[test]
+    fn an_unnamed_line_waits_for_a_name_when_two_characters_acted() {
+        let (mut s, d) = table_state(&["Aria", "Bram"]);
+        let reply = "<rpg>\nxp +20\nall: money +5\n</rpg>";
+        let parsed = tags::parse(reply);
+        let mut e = Entry::text("assistant", reply);
+        let acted = [("Aria".to_string(), "a".to_string()), ("Bram".to_string(), "b".to_string())];
+        apply_rpg(&d, &mut s, &parsed, &mut e, &acted).unwrap();
+        assert_eq!(s.rules.sheets["Aria"].xp + s.rules.sheets["Bram"].xp, 0, "nobody was guessed");
+        assert_eq!(s.rules.sheets["Aria"].money, 5);
+        assert_eq!(s.rules.sheets["Bram"].money, 5);
+        let notices = &s.session.rpg_notices;
+        assert!(notices.iter().any(|n| n.contains("Aria") && n.contains("Bram")), "{notices:?}");
+    }
+
+    #[test]
+    fn a_named_line_still_picks_that_character() {
+        let (mut s, d) = table_state(&["Aria", "Bram"]);
+        let reply = "<rpg>\nAria: xp +20\n</rpg>";
+        let parsed = tags::parse(reply);
+        let mut e = Entry::text("assistant", reply);
+        apply_rpg(&d, &mut s, &parsed, &mut e, &[("Bram".into(), "b".into())]).unwrap();
+        assert_eq!(s.rules.sheets["Aria"].xp, 20);
+        assert_eq!(s.rules.sheets["Bram"].xp, 0);
+    }
+
+    #[test]
+    fn a_solo_game_still_takes_unnamed_lines() {
+        let (mut s, d) = table_state(&["Wren"]);
+        let reply = "<rpg>\nxp +20\n</rpg>";
+        let parsed = tags::parse(reply);
+        let mut e = Entry::text("assistant", reply);
+        apply_rpg(&d, &mut s, &parsed, &mut e, &[(String::new(), "I look around".into())]).unwrap();
+        assert_eq!(s.rules.sheets["Wren"].xp, 20);
+        assert!(s.session.rpg_notices.is_empty(), "{:?}", s.session.rpg_notices);
+    }
+
+    #[test]
+    fn the_system_too_gives_experience_to_the_one_who_acted() {
+        let (mut s, d) = state(&[]);
+        s.rules.enabled = true;
+        s.rules.ruleset = "ad".into();
+        for n in ["Aria", "Bram"] {
+            s.rules.ensure_sheet(n);
+        }
+        let reply = "<rpg>\nxp 1000\n</rpg>";
+        let parsed = tags::parse(reply);
+        let mut e = Entry::text("assistant", reply);
+        apply_rpg(&d, &mut s, &parsed, &mut e, &[("Bram".into(), "I tune the wolf's frequency".into())]).unwrap();
+        assert!(s.rules.ad.sheets["Bram"].level > 1, "Bram didn't level");
+        assert_eq!(s.rules.ad.sheets["Aria"].level, 1, "Aria was never touched");
     }
 }

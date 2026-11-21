@@ -1931,6 +1931,13 @@ impl World {
         (self.sheets.len() == 1 && character.trim().is_empty()).then(|| self.sheets.keys().next().cloned()).flatten()
     }
 
+    /// What to tell a GM whose line should have said whose change it is.
+    fn say_whose(&self) -> String {
+        let mut names: Vec<String> = self.sheets.keys().cloned().collect();
+        names.sort();
+        format!("say whose it is: {} (or all: for everyone)", names.join(", "))
+    }
+
     /// The System has seen the use since its last look.
     pub fn looked(&mut self) {
         for s in self.sheets.values_mut() {
@@ -1956,7 +1963,7 @@ impl World {
             Some((a, b)) if !a.trim().is_empty() && self.sheet_key(a).is_some() => (a.trim().to_string(), b.trim()),
             _ => (default_char.to_string(), line),
         };
-        let key = self.sheet_key(&who).ok_or_else(|| format!("no sheet for '{who}'"))?;
+        let key = self.sheet_key(&who).ok_or_else(|| if who.trim().is_empty() { self.say_whose() } else { format!("no sheet for '{who}'") })?;
         let (verb_raw, rest) = cmd.split_once(char::is_whitespace).unwrap_or((cmd, ""));
         // The line's own word too: after `rename class -> Calling`, `Calling offer …` is the same line.
         let verb = self.unlabel(verb_raw).to_lowercase();
