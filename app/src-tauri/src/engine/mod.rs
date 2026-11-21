@@ -1,7 +1,8 @@
-//! The three ways to reach a model. Everything above this module sees one streaming call and one
+//! The four ways to reach a model. Everything above this module sees one streaming call and one
 //! small one-shot call (`helper`), whichever engine the player chose.
 
 pub mod anthropic;
+pub mod antigravity;
 pub mod claude_code;
 pub mod openai;
 
@@ -35,6 +36,7 @@ pub fn stream(cfg: &Config, req: &Request, on_delta: &mut dyn FnMut(&str), cance
     match cfg.engine.as_str() {
         "api" => anthropic::stream(cfg, req, on_delta, cancel),
         "other" => openai::stream(cfg, req, on_delta, cancel),
+        "antigravity" => antigravity::stream(cfg, req, on_delta, cancel),
         _ => claude_code::stream(cfg, req, on_delta, cancel),
     }
 }
@@ -45,6 +47,7 @@ pub fn helper(cfg: &Config, system: &str, user: &str) -> Result<String, String> 
     match cfg.engine.as_str() {
         "api" => anthropic::once(cfg, &model, system, user),
         "other" => openai::once(cfg, &model, system, user),
+        "antigravity" => antigravity::once(cfg, &model, system, user),
         _ => claude_code::once(cfg, &model, system, user),
     }
 }
@@ -57,6 +60,7 @@ fn helper_model(cfg: &Config) -> String {
     match cfg.engine.as_str() {
         "api" => "claude-haiku-5-5".into(),
         "other" => cfg.other_model.clone(),
+        "antigravity" => "gemini-3.8-flash-low".into(),
         _ => "haiku".into(),
     }
 }

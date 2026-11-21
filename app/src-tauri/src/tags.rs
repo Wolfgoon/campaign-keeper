@@ -17,6 +17,9 @@ pub struct Parsed {
     pub voices: Vec<Value>,
     pub rpg_lines: Vec<String>,
     pub rpg_sheet: Option<Value>,
+    pub ambience: Option<Value>,
+    /// {name, body, edit}
+    pub maps: Vec<Value>,
     pub save_block: Option<String>,
 }
 
@@ -51,11 +54,32 @@ pub fn parse(reply: &str) -> Parsed {
         p.rpg_lines.extend(b.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string));
     });
     take(&mut t, r"(?s)<picture\b([^>]*?)>(.*?)</picture>", |a, b| {
-        p.pictures.push(json!({ "title": a["title"], "kind": a["kind"], "svg": b.trim() }));
+        let mut pic = a.clone();
+        pic["svg"] = json!(b.trim());
+        p.pictures.push(pic);
     });
-    take(&mut t, r"<picture\b([^>]*?)/()>", |a, _| p.pictures.push(json!({ "title": a["title"], "rel": true })));
+    take(&mut t, r"(?s)<sprite\b([^>]*)>(.*?)</sprite>", |a, b| {
+        let mut pic = a.clone();
+        pic["sprite"] = json!(b.trim_matches(['\n', '\r']));
+        p.pictures.push(pic);
+    });
+    // In the order written: a map drawn and then edited in one reply has to go in that order.
+    let mut found: Vec<(usize, Value)> = Vec::new();
+    for (pattern, edit) in [(r"(?s)<map_edit\b([^>]*)>(.*?)</map_edit>", true), (r"(?s)<map\b([^>]*)>(.*?)</map>", false)] {
+        let r = re(pattern);
+        for c in r.captures_iter(&t) {
+            found.push((c.get(0).map_or(0, |m| m.start()), json!({ "name": attrs(&c[1])["name"], "body": &c[2], "edit": edit })));
+        }
+        t = r.replace_all(&t, "").into_owned();
+    }
+    found.sort_by_key(|f| f.0);
+    p.maps = found.into_iter().map(|f| f.1).collect();
+    take(&mut t, r"<ambience\b([^>]*?)/()>", |a, _| p.ambience = Some(a));
+    take(&mut t, r"<picture\b([^>]*?)/()>", |a, _| p.pictures.push(a));
     take(&mut t, r"(?s)<music\b([^>]*?[^/])>(.*?)</music>", |a, b| {
-        p.music = Some(json!({ "title": a["title"], "tempo": a["tempo"], "score": b.trim() }));
+        let mut m = a.clone();
+        m["score"] = json!(b.trim());
+        p.music = Some(m);
     });
     take(&mut t, r"<music\b([^>]*?)/()>", |a, _| {
         p.music = Some(if a["title"].is_string() { json!({ "title": a["title"], "replay": true }) } else { json!({ "stop": true }) });
@@ -115,7 +139,7 @@ fn activity(mut a: Value, body: &str) -> Value {
 pub fn visible(partial: &str) -> String {
     let p = parse(partial);
     let mut t = p.display;
-    for tag in ["<gm_notebook", "<rpg", "<picture", "<music", "<activity"] {
+    for tag in ["<gm_notebook", "<rpg", "<picture", "<sprite", "<music", "<activity", "<map", "<ambience"] {
         if let Some(i) = t.find(tag) {
             t.truncate(i);
         }
@@ -176,7 +200,7 @@ secret plans
     fn replays_and_stops() {
         assert_eq!(parse(r#"x <music title="A"/>"#).music.unwrap()["replay"], true);
         assert_eq!(parse("x <music stop/>").music.unwrap()["stop"], true);
-        assert_eq!(parse(r#"x <picture title="K"/>"#).pictures[0]["rel"], true);
+        assert_eq!(parse(r#"x <picture title="K"/>"#).pictures[0]["title"], "K");
     }
 
     #[test]
@@ -189,6 +213,53 @@ secret plans
             assert!(!visible(&s[..cut]).contains("butler"), "leaked at {cut}");
         }
         assert_eq!(visible("Hi <voice name=\"A\">\"yo"), "Hi \"yo");
+    }
+
+    #[test]
+    fn new_art_map_and_sound_tags() {
+        let r = r##"Night falls.
+<picture title="Key" kind="item" px="64" colors="8" palette="sepia" dither="on"><svg viewBox="0 0 4 3"></svg></picture>
+<sprite title="Rat" kind="npc" palette="a:#112233">
+.a.
+aaa
+</sprite>
+<map name="Varrow">
++--+
+</map>
+<map_edit name="Varrow">
+marker @ 1 0 Wren
+</map_edit>
+<ambience sounds="rain, sea" level="0.4"/>
+<music title="T" tempo="90" form="A B A" swing="0.1" reverb="0.5" loop="no">
+[A]
+pad: Dm - - -
+</music>"##;
+        let p = parse(r);
+        assert_eq!(p.display, "Night falls.");
+        assert_eq!(p.pictures[0]["px"], "64");
+        assert_eq!(p.pictures[0]["palette"], "sepia");
+        assert_eq!(p.pictures[1]["sprite"], ".a.\naaa");
+        assert_eq!((p.maps.len(), p.maps[0]["edit"].as_bool(), p.maps[1]["edit"].as_bool()), (2, Some(false), Some(true)));
+        assert_eq!(p.ambience.unwrap()["sounds"], "rain, sea");
+        let m = p.music.unwrap();
+        assert_eq!((m["form"].as_str(), m["loop"].as_str()), (Some("A B A"), Some("no")));
+        assert!(m["score"].as_str().unwrap().contains("[A]"));
+    }
+
+    #[test]
+    fn unfinished_new_tags_stay_hidden_while_streaming() {
+        for s in ["ok <map name=\"V\">\n+--secret", "ok <sprite title=\"R\">\nsecret", "ok <map_edit name=\"V\">secret"] {
+            assert_eq!(visible(s), "ok", "{s}");
+        }
+    }
+
+    #[test]
+    fn a_painted_picture_keeps_its_prompt_and_a_replay_has_none() {
+        let p = parse(r#"x <picture title="Harbor" kind="scene" prompt="a wet quay at dusk/night" px="160"/> y <picture title="Key"/>"#);
+        assert_eq!(p.pictures[0]["prompt"], "a wet quay at dusk/night");
+        assert_eq!(p.pictures[0]["px"], "160");
+        assert!(p.pictures[1]["prompt"].is_null());
+        assert_eq!(p.display, "x  y");
     }
 
     #[test]

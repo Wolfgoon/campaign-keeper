@@ -2,12 +2,14 @@
   import { onMount, tick } from "svelte";
   import { call, onClient, md, toast } from "../lib/api";
   import { music } from "../lib/music.svelte";
+  import { platform } from "../lib/platform.svelte";
   import { speakEntry, stopSpeaking } from "../lib/voice.svelte";
   import Entry from "./Entry.svelte";
   import Status from "./Status.svelte";
   import Activity from "./Activity.svelte";
   import Sound from "./Sound.svelte";
   import Voices from "./Voices.svelte";
+  import Maps from "./Maps.svelte";
 
   let { cfg, leave, settings } = $props();
 
@@ -25,6 +27,8 @@
   let you = $state<number | null>(null);
   let busy = $state(false);
   let sheet = $state<any>(null);
+  let labels = $state<any>({});
+  let maps = $state<any[]>([]);
   let characters = $state<string[]>([]);
   let activities = $state<any[]>([]);
   let closedActivities = $state<number[]>([]);
@@ -38,6 +42,33 @@
   let seenMusic = 0;
   let seenReplies = -1;
   let stick = true;
+  let sideOpen = $state(false);
+  let joining = $state(false);
+  let reconnecting = $state(false);
+
+  // An invitation from the host fills in both fields, so nobody types an address and a code.
+  let pasted = $state("");
+  let pasteNote = $state("");
+  let pasteBad = $state(false);
+
+  async function readInvite() {
+    const text = pasted.trim();
+    if (!text) {
+      pasteNote = "";
+      pasteBad = false;
+      return;
+    }
+    try {
+      const inv = (await call("pair_parse", { text })) as { addr: string; code: string };
+      addr = inv.addr;
+      code = inv.code;
+      pasteNote = `Ready: ${inv.addr} · ${inv.code}`;
+      pasteBad = false;
+    } catch (e) {
+      pasteNote = String(e);
+      pasteBad = true;
+    }
+  }
 
   function nearBottom() {
     return !log || log.scrollHeight - log.scrollTop - log.clientHeight < 200;
@@ -54,6 +85,8 @@
   }
 
   async function join() {
+    if (joining) return;
+    joining = true;
     error = "";
     try {
       await call("client_join", { addr, code, name });
@@ -65,6 +98,29 @@
     } catch (e) {
       error = String(e);
     }
+    joining = false;
+  }
+
+  // The line dropped (a phone slept, Wi-Fi blinked): take the seat back without asking.
+  async function reconnect() {
+    if (reconnecting) return;
+    reconnecting = true;
+    for (let i = 0; i < 8 && reconnecting; i++) {
+      await new Promise((r) => setTimeout(r, i ? 4000 : 800));
+      if (!reconnecting) return;
+      try {
+        await call("client_join", { addr, code, name });
+        reconnecting = false;
+        return;
+      } catch {
+        /* the host may still be out of reach: try again */
+      }
+    }
+    if (!reconnecting) return;
+    reconnecting = false;
+    error = "The connection to the host was lost.";
+    phase = "join";
+    music.stop();
   }
 
   const me = $derived(t?.table?.seats?.find((s: any) => s.id === you));
@@ -82,6 +138,8 @@
   }
 
   function exit() {
+    reconnecting = false;
+    phase = "join";
     call("client_leave");
     music.stop();
     stopSpeaking();
@@ -95,13 +153,15 @@
       speakEntry(last.text, last.voices, cfg.tts_speed);
     }
     seenReplies = replies.length;
-    const withMusic = entries.filter((e) => e.music).length;
-    if (withMusic > seenMusic) {
-      const e = [...entries].reverse().find((x) => x.music);
-      if (e.music.stop) music.stop();
-      else if (e.music.score) music.play(e.music);
+    const withSound = entries.filter((e) => e.music || e.ambience).length;
+    if (withSound > seenMusic) {
+      const last = [...entries].reverse();
+      const m = last.find((x) => x.music);
+      const a = last.find((x) => x.ambience);
+      if (m) music.apply({ music: m.music });
+      if (a) music.apply({ ambience: a.ambience });
     }
-    seenMusic = withMusic;
+    seenMusic = withSound;
   }
 
   onMount(() => {
@@ -113,6 +173,7 @@
         case "welcome": phase = "seated"; error = ""; break;
         case "table":
           t = m.state; you = m.you; busy = m.busy; sheet = m.sheet; characters = m.characters;
+          labels = m.labels ?? {}; maps = m.maps ?? [];
           activities = m.activities ?? [];
           talkLog = m.state.table?.talk ?? talkLog;
           break;
@@ -134,7 +195,10 @@
         case "talk": talkLog.push(m.line); break;
         case "notice": toast(m.text); break;
         case "refused":
-        case "goodbye": error = m.reason; phase = "join"; music.stop(); break;
+        case "goodbye":
+          if (m.lost && phase === "seated") reconnect();
+          else if (!reconnecting) { error = m.reason; phase = "join"; music.stop(); }
+          break;
       }
     });
     return () => void un.then((f) => f());
@@ -144,9 +208,17 @@
 {#if phase === "join"}
   <div class="view"><div class="welcome">
     <h1>Join a game</h1>
-    <p class="muted">Play at a friend's table. They run the game and the AI; you need their address and join code, and no Claude account of your own.</p>
+    <p class="muted">{platform.web ? "Play at your friend's table, right here in the browser. They run the game and the AI; you just need the join code they give you." : "Play at a friend's table. They run the game and the AI; you need their address and join code, and no Claude account of your own."}</p>
     <label class="field"><span>Your name</span><input bind:value={name} /></label>
-    {#if found.length}
+    {#if !platform.web}
+      <label class="field"><span>Invitation (paste what the host copied)</span>
+        <input value={pasted} oninput={(e) => { pasted = e.currentTarget.value; readInvite(); }} placeholder="campaignkeeper://join?host=my-pc&code=K7Q2-M9XD" />
+      </label>
+      {#if pasteNote}<p class={pasteBad ? "small error" : "small muted"} role={pasteBad ? "alert" : "status"}>{pasteNote}</p>{/if}
+    {/if}
+    {#if platform.web}
+      <!-- The page came from the host: there's no address to find or type. -->
+    {:else if found.length}
       <h3>Tables on your network</h3>
       {#each found as f}
         <button onclick={() => (addr = f.addr)}>{f.campaign} <span class="muted small">· {f.host}</span></button>
@@ -154,16 +226,20 @@
     {:else}
       <p class="small muted">{scanning ? "Looking… (tables the host chose to show appear here)" : "No tables found nearby."}</p>
     {/if}
-    <label class="field"><span>Host's address</span><input bind:value={addr} placeholder="192.168.1.20 or a Tailscale name" /></label>
+    {#if !platform.web}<label class="field"><span>Host's address</span><input bind:value={addr} placeholder="192.168.1.20 or a Tailscale name" /></label>{/if}
     <label class="field"><span>Join code</span><input class="mono" bind:value={code} placeholder="K7Q2-M9XD" /></label>
     {#if error}<p class="error" role="alert">{error}</p>{/if}
     <div class="row">
-      <button class="primary" onclick={join}>Join</button>
-      <button onclick={scan} disabled={scanning}>Look again</button>
+      <button class="primary" disabled={joining} onclick={join}>{joining ? "Joining…" : "Join"}</button>
+      {#if !platform.web}<button onclick={scan} disabled={scanning}>Look again</button>{/if}
       <button class="ghost" onclick={settings}>⚙ Settings</button>
-      <button class="ghost" onclick={exit}>Back</button>
+      {#if !platform.web}<button class="ghost" onclick={exit}>Back</button>{/if}
     </div>
-    <p class="small muted">🔒 Connections are encrypted, and the join code is checked without ever crossing the network.</p>
+    {#if platform.web}
+      <p class="small muted">Tip: add this page to your home screen to open it like an app.</p>
+    {:else}
+      <p class="small muted">🔒 Connections are encrypted, and the join code is checked without ever crossing the network.</p>
+    {/if}
   </div></div>
 {:else if phase === "waiting"}
   <div class="view"><div class="welcome"><h2>Waiting for the host to let you in…</h2><button onclick={exit}>Leave</button></div></div>
@@ -176,27 +252,30 @@
           {#each entries as e, i (i)}<Entry {e} speak={(x: any) => speakEntry(x.text, x.voices, cfg.tts_speed)} />{/each}
           {#if stream}<div class="msg-gm">{@html md(stream)}</div>{/if}
           {#if busy && !stream}<div class="msg-note">The GM is writing…</div>{/if}
+          {#if reconnecting}<div class="msg-note" role="status">Connection lost. Reconnecting to the host…</div>{/if}
         </div>
       </div>
       <div class="composer"><div class="composer-inner">
         {#each offers as a (a.id)}
           <button onclick={() => (openActivity = a)}>{a.icon ?? "✍"} {a.title ?? "An activity is open"}</button>
         {/each}
-        <textarea rows="2" bind:value={action} placeholder={'What do you do?   > act   "speak"   /status'} aria-label="Your action" onkeydown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}></textarea>
+        <textarea rows="2" bind:value={action} placeholder={'What do you do?   > act   "speak"   /status'} aria-label="Your action" onkeydown={(e) => { if (e.key === "Enter" && !e.shiftKey && !platform.mobile) { e.preventDefault(); submit(); } }}></textarea>
         <div class="row">
           <button class="primary" disabled={!me?.character} onclick={() => submit()}>Lock in</button>
           <button disabled={!me?.character} onclick={() => submit(true)}>Hold back this round</button>
           {#if !me?.character}<span class="small muted">Choose your character first.</span>
           {:else if me?.acted}<span class="small muted">✔ Your action is in. Waiting for the others.</span>{/if}
           <span class="grow"></span>
+          <button class="narrow-only" onclick={() => (sideOpen = true)}>☰ Party, status, map…</button>
           <button class="ghost" aria-label="Settings" onclick={settings}>⚙</button>
           <button class="ghost" onclick={exit}>Leave the table</button>
         </div>
       </div></div>
     </div>
-    <aside class="side">
+    <aside class="side" class:open={sideOpen || !me?.character}>
       <div class="side-tabs">
-        {#each [["party", "👥 Party"], ["status", "Status"], ["music", "🎵"], ["voices", "💬"]] as [id, label]}
+        {#if me?.character}<button class="tab narrow-only" style="flex:none" aria-label="Back to the story" onclick={() => (sideOpen = false)}>← Story</button>{/if}
+        {#each [["party", "👥 Party"], ["status", "Status"], ["map", "🗺"], ["music", "🎵"], ["voices", "💬"]] as [id, label]}
           <button class="tab" class:on={side === id} aria-label={id} onclick={() => (side = id)}>{label}</button>
         {/each}
       </div>
@@ -221,8 +300,10 @@
           {#each talkLog as l}<div class="small"><b>{l.from}:</b> {l.text}</div>{/each}
           <input bind:value={talk} placeholder="Say something to the table" aria-label="Say something to the table" onkeydown={(e) => { if (e.key === "Enter") { send({ t: "talk", text: talk }); talk = ""; } }} />
         {:else if side === "status"}
-          {#if sheet}<Status {sheet} readOnly onSpend={(kind: string, name: string) => send({ t: "spend", kind, name })} />
+          {#if sheet}<Status {sheet} {labels} readOnly onSpend={(kind: string, name: string) => send({ t: "spend", kind, name })} />
           {:else}<p class="small muted">Your status window appears here once the host's game uses the rules and you've chosen a character.</p>{/if}
+        {:else if side === "map"}
+          <Maps list={maps} />
         {:else if side === "music"}
           <Sound {cfg} />
         {:else}

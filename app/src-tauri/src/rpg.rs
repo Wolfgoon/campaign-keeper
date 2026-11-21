@@ -28,6 +28,8 @@ pub const BANDS: [(&str, i32); 8] = [
     ("impossible", 99),
 ];
 pub const CIRCUMSTANCE_CAP: i32 = 5;
+/// Stats the GM may give a new name.
+pub const LABELLED: [&str; 10] = ["Might", "Agility", "Endurance", "Intellect", "Insight", "Presence", "HP", "Stamina", "Mana", "Money"];
 const RANK_TITLES: [&str; 7] = ["untrained", "novice", "trained", "expert", "master", "grandmaster", "legend"];
 pub const RANK_MAX: i32 = 10;
 
@@ -385,6 +387,78 @@ pub struct Rules {
     pub history: Vec<Record>,
     /// Lines of the system log, newest last.
     pub log: Vec<String>,
+    /// What this story calls the stats: "Might" -> "Grit". The rules keep the fixed names inside,
+    /// so a rename can't touch a single number.
+    pub labels: BTreeMap<String, String>,
+    /// Which rules: "" is Classic (this file), "ad" is the AD System (`ad.rs`, Spirit's rules).
+    pub ruleset: String,
+    pub ad: crate::ad::World,
+}
+
+impl Rules {
+    pub fn is_ad(&self) -> bool {
+        self.ruleset == "ad"
+    }
+
+    pub fn has_sheets(&self) -> bool {
+        if self.is_ad() { !self.ad.sheets.is_empty() } else { !self.sheets.is_empty() }
+    }
+
+    pub fn names(&self) -> Vec<String> {
+        if self.is_ad() { self.ad.sheets.keys().cloned().collect() } else { self.sheets.keys().cloned().collect() }
+    }
+
+    /// Every status window, as the GM reads it.
+    pub fn status_all(&self) -> String {
+        if self.is_ad() {
+            let t = self.ad.sheets.values().map(|x| crate::ad::status_text(x, &self.ad.defs)).collect::<Vec<_>>().join("\n\n");
+            let names = self.ad.labels.iter().map(|(k, v)| format!("{k} -> {v}")).collect::<Vec<_>>().join(", ");
+            let t = crate::ad::relabel(&t, &self.ad.labels);
+            if names.is_empty() { t } else { format!("{t}\n(System only) This story's names: {names}") }
+        } else {
+            self.sheets.values().map(|x| status_text(x, &self.labels)).collect::<Vec<_>>().join("\n\n")
+        }
+    }
+
+    /// One `<rpg>` line, under whichever rules this game uses.
+    pub fn apply(&mut self, line: &str, default_char: &str) -> Result<String, String> {
+        if self.is_ad() {
+            let r = self.ad.apply_line(line, default_char).map(|m| crate::ad::relabel(&m, &self.ad.labels));
+            if let Ok(m) = &r {
+                self.log.push(m.trim_start_matches(crate::ad::SYSTEM_ONLY).to_string());
+            }
+            r
+        } else {
+            apply_line(self, line, default_char)
+        }
+    }
+
+    /// A character joining the table gets a blank sheet under the rules in use.
+    pub fn ensure_sheet(&mut self, name: &str) {
+        if self.is_ad() {
+            if self.ad.sheet_key(name).is_none() {
+                let base = crate::ad::STATS.iter().map(|s| (s.to_string(), 10)).collect();
+                let s = crate::ad::Sheet::new(name, "human", base, &self.ad.defs);
+                self.ad.sheets.insert(name.to_string(), s);
+            }
+        } else if !self.sheets.keys().any(|k| k.eq_ignore_ascii_case(name)) {
+            self.sheets.insert(name.to_string(), Sheet { name: name.to_string(), ..Sheet::default() });
+        }
+    }
+
+    /// One character's sheet for the status panel.
+    pub fn view(&self, character: &str) -> Option<Value> {
+        if self.is_ad() {
+            let k = self.ad.sheet_key(character)?;
+            let mut v = crate::ad::sheet_view(&self.ad.sheets[&k], &self.ad.defs);
+            crate::ad::relabel_value(&mut v, &self.ad.labels);
+            // the panel names the stats by these
+            v["labels"] = serde_json::json!(crate::ad::STATS.iter().map(|s| (s.to_string(), crate::ad::relabel(s, &self.ad.labels))).collect::<BTreeMap<_, _>>());
+            Some(v)
+        } else {
+            self.sheets.iter().find(|(k, _)| k.eq_ignore_ascii_case(character)).and_then(|(_, v)| serde_json::to_value(v).ok())
+        }
+    }
 }
 
 pub fn load(dir: &Path) -> Rules {
@@ -439,6 +513,72 @@ impl Rules {
         }
     }
 
+    pub fn label<'a>(&'a self, name: &'a str) -> &'a str {
+        self.labels.get(name).map_or(name, String::as_str)
+    }
+
+    /// Give something a name that fits the story. Only the name changes: ranks, marks, values,
+    /// and every past ruling carry over.
+    fn rename(&mut self, key: &str, what: &str) -> Result<String, String> {
+        let (kind, rest) = what.split_once(char::is_whitespace).ok_or("rename needs: skill Old -> New")?;
+        let (old, new) = rest.split_once("->").ok_or("rename needs: Old -> New")?;
+        let (old, new) = (old.trim(), clean_label(new, 40)?);
+        match kind.to_lowercase().as_str() {
+            "skill" => {
+                let s = self.sheets.get_mut(key).ok_or("no sheet")?;
+                let from = s.skill_key(old).ok_or_else(|| format!("{key} has no skill called {old}"))?;
+                // A rank is never part of a name, or the same trouble comes back.
+                if base_skill_name(&new) != new.to_lowercase() {
+                    return Err(format!("'{new}' has a rank in its name"));
+                }
+                if s.skills.keys().any(|k| k != &from && k.eq_ignore_ascii_case(&new)) {
+                    return Err(format!("{key} already has a skill called {new}"));
+                }
+                let skill = s.skills.remove(&from).ok_or("no such skill")?;
+                s.skills.insert(new.clone(), skill);
+                for item in s.inventory.iter_mut() {
+                    if let Some(b) = item.bonuses.remove(&from) {
+                        item.bonuses.insert(new.clone(), b);
+                    }
+                }
+                for h in self.history.iter_mut().filter(|h| h.skill == from) {
+                    h.skill = new.clone();
+                }
+                let suffix = format!("|{}", norm(&from));
+                let keys: Vec<String> = self.rivals.keys().filter(|k| k.ends_with(&suffix)).cloned().collect();
+                for k in keys {
+                    if let Some(v) = self.rivals.remove(&k) {
+                        self.rivals.insert(format!("{}|{}", k.trim_end_matches(&suffix), norm(&new)), v);
+                    }
+                }
+                Ok(format!("{key}: {from} is now {new}"))
+            }
+            "perk" => {
+                let s = self.sheets.get_mut(key).ok_or("no sheet")?;
+                let from = s.perks.keys().find(|k| k.eq_ignore_ascii_case(old)).cloned().ok_or_else(|| format!("{key} has no perk called {old}"))?;
+                if s.perks.keys().any(|k| k != &from && k.eq_ignore_ascii_case(&new)) {
+                    return Err(format!("{key} already has a perk called {new}"));
+                }
+                let d = s.perks.remove(&from).unwrap_or_default();
+                s.perks.insert(new.clone(), d);
+                Ok(format!("{key}: perk {from} is now {new}"))
+            }
+            "stat" | "attribute" => {
+                let canon = LABELLED
+                    .iter()
+                    .find(|a| a.eq_ignore_ascii_case(old) || self.labels.get(**a).is_some_and(|l| l.eq_ignore_ascii_case(old)))
+                    .ok_or_else(|| format!("no stat called {old}"))?;
+                let clash = LABELLED.iter().any(|a| a != canon && (a.eq_ignore_ascii_case(&new) || self.labels.get(*a).is_some_and(|l| l.eq_ignore_ascii_case(&new))));
+                if clash {
+                    return Err(format!("another stat is already called {new}"));
+                }
+                self.labels.insert(canon.to_string(), new.clone());
+                Ok(format!("{old} is now {new}"))
+            }
+            other => Err(format!("can't rename a {other}")),
+        }
+    }
+
     fn sheet_key(&self, character: &str) -> Option<String> {
         if let Some(k) = self.sheets.keys().find(|k| norm(k) == norm(character)) {
             return Some(k.clone());
@@ -459,7 +599,7 @@ impl Rules {
             return Err("a check needs a skill".into());
         }
         let known = sheet.skills.get(&skill_name);
-        let attribute = known.map(|s| s.attribute.clone()).filter(|a| !a.is_empty()).unwrap_or_else(|| canon_attribute(&req.attribute));
+        let attribute = known.map(|s| s.attribute.clone()).filter(|a| !a.is_empty()).unwrap_or_else(|| canon_attribute(&req.attribute, &self.labels));
         let rank = known.map_or(0, |s| s.rank);
         let attribute_value = sheet.attribute(&attribute);
         let (gear, gear_item) = sheet.gear_bonus(&skill_name);
@@ -589,8 +729,18 @@ impl Rules {
     }
 }
 
-fn canon_attribute(s: &str) -> String {
-    ATTRIBUTES.iter().find(|a| a.eq_ignore_ascii_case(s.trim())).map_or_else(|| "Intellect".to_string(), |a| a.to_string())
+fn canon_attribute(s: &str, labels: &BTreeMap<String, String>) -> String {
+    let s = s.trim();
+    ATTRIBUTES
+        .iter()
+        .find(|a| a.eq_ignore_ascii_case(s) || labels.get(**a).is_some_and(|l| l.eq_ignore_ascii_case(s)))
+        .map_or_else(|| "Intellect".to_string(), |a| a.to_string())
+}
+
+fn clean_label(s: &str, max: usize) -> Result<String, String> {
+    let t: String = s.chars().filter(|c| c.is_alphanumeric() || " -'/&.".contains(*c)).take(max).collect();
+    let t = t.split_whitespace().collect::<Vec<_>>().join(" ");
+    if t.is_empty() { Err("that name is empty".into()) } else { Ok(t) }
 }
 
 /// One change the GM asked for at the end of a reply, in `<rpg>` lines.
@@ -603,10 +753,16 @@ pub fn apply_line(r: &mut Rules, line: &str, default_char: &str) -> Result<Strin
     };
     let key = r.sheet_key(&who).ok_or_else(|| format!("no sheet for '{who}'"))?;
     let level = r.sheets.get(&key).map_or(1, |s| s.level) as i64;
-    let s = r.sheets.get_mut(&key).ok_or("no sheet")?;
     let (verb, rest) = cmd.split_once(char::is_whitespace).unwrap_or((cmd, ""));
     let verb = verb.to_lowercase();
     let rest = rest.trim();
+    if verb == "rename" {
+        let msg = r.rename(&key, rest)?;
+        r.log.push(msg.clone());
+        return Ok(msg);
+    }
+    let labels = r.labels.clone();
+    let s = r.sheets.get_mut(&key).ok_or("no sheet")?;
     let number = |t: &str| t.split_whitespace().next().and_then(|n| n.trim_start_matches('+').parse::<i64>().ok());
     let mut extra = Vec::new();
     let msg = match verb.as_str() {
@@ -698,9 +854,13 @@ pub fn apply_line(r: &mut Rules, line: &str, default_char: &str) -> Result<Strin
             let t = rest.trim_start_matches('+').trim();
             let (name, attr) = t.rsplit_once(char::is_whitespace).ok_or("skill needs: name attribute")?;
             if s.skill_key(name).is_none() {
-                s.skills.insert(name.trim().into(), Skill { attribute: canon_attribute(attr), rank: 0, marks: 0 });
+                s.skills.insert(name.trim().into(), Skill { attribute: canon_attribute(attr, &labels), rank: 0, marks: 0 });
             }
             format!("New skill: {}", name.trim())
+        }
+        "class" => {
+            s.class = clean_label(rest, 60)?;
+            format!("Class: {}", s.class)
         }
         "perk" => {
             let t = rest.trim_start_matches('+').trim();
@@ -731,7 +891,7 @@ pub fn sheet_from_json(v: &Value) -> Option<Sheet> {
     }
     if let Some(m) = v["skills"].as_object() {
         for (k, sk) in m.iter().take(20) {
-            let attribute = canon_attribute(sk["attribute"].as_str().unwrap_or(""));
+            let attribute = canon_attribute(sk["attribute"].as_str().unwrap_or(""), &BTreeMap::new());
             let rank = (sk["rank"].as_i64().unwrap_or(0) as i32).clamp(0, 6);
             s.skills.insert(k.trim().to_string(), Skill { attribute, rank, marks: 0 });
         }
@@ -759,16 +919,18 @@ pub fn sheet_from_json(v: &Value) -> Option<Sheet> {
     Some(s)
 }
 
-/// The status window as text: what the GM sees each turn.
-pub fn status_text(s: &Sheet) -> String {
-    let attrs = ATTRIBUTES.iter().map(|a| format!("{a} {}", s.attribute(a))).collect::<Vec<_>>().join(" · ");
+/// The status window as text, in the story's own names: what the GM sees each turn.
+pub fn status_text(s: &Sheet, labels: &BTreeMap<String, String>) -> String {
+    let l = |n: &'static str| labels.get(n).map_or(n, String::as_str);
+    let attrs = ATTRIBUTES.iter().map(|a| format!("{} {}", l(a), s.attribute(a))).collect::<Vec<_>>().join(" · ");
     let skills = s
         .skills
         .iter()
         .map(|(k, v)| {
             let (g, _) = s.gear_bonus(k);
             let total = s.attribute(&v.attribute) + v.rank * 2 + g;
-            format!("{k}: rank {} {} ({}, base score {total})", v.rank, rank_title(v.rank), v.attribute)
+            let attr = labels.get(&v.attribute).unwrap_or(&v.attribute);
+            format!("{k}: rank {} {} ({attr}, base score {total})", v.rank, rank_title(v.rank))
         })
         .collect::<Vec<_>>()
         .join("; ");
@@ -783,21 +945,23 @@ pub fn status_text(s: &Sheet) -> String {
         s.conditions.iter().map(|c| format!("{} ({:+})", c.name, c.modifier)).collect::<Vec<_>>().join(", ")
     };
     let mut t = format!(
-        "{} - Level {} {} | XP {}/{}\nHP {}/{} · Stamina {}/{}",
+        "{} - Level {} {} | XP {}/{}\n{} {}/{} · {} {}/{}",
         s.name,
         s.level,
         if s.class.is_empty() { "Adventurer" } else { &s.class },
         s.xp,
         xp_for_level(s.level + 1),
+        l("HP"),
         s.hp.cur,
         s.hp.max,
+        l("Stamina"),
         s.stamina.cur,
         s.stamina.max
     );
     if s.mana.max > 0 {
-        t.push_str(&format!(" · Mana {}/{}", s.mana.cur, s.mana.max));
+        t.push_str(&format!(" · {} {}/{}", l("Mana"), s.mana.cur, s.mana.max));
     }
-    t.push_str(&format!("\n{attrs}\nSkills: {skills}\nMoney: {} · Carrying: {items}\nConditions: {conds}", s.money));
+    t.push_str(&format!("\n{attrs}\nSkills: {skills}\n{}: {} · Carrying: {items}\nConditions: {conds}", l("Money"), s.money));
     if !s.perks.is_empty() {
         t.push_str(&format!("\nPerks: {}", s.perks.keys().cloned().collect::<Vec<_>>().join(", ")));
     }
@@ -896,7 +1060,7 @@ mod tests {
         assert_eq!((c.skill.as_str(), c.rank), ("Observation", 4));
         assert_eq!(r.sheets["Wren"].skills.len(), 2);
         // The status window names skills in a way that can be copied exactly.
-        assert!(status_text(&r.sheets["Wren"]).contains("Observation: rank 4 Expert"));
+        assert!(status_text(&r.sheets["Wren"], &r.labels).contains("Observation: rank 4 Expert"));
     }
 
     #[test]
@@ -945,6 +1109,69 @@ mod tests {
         r.sheets.get_mut("Wren").unwrap().skills.insert("Harbor Master".into(), Skill::default());
         r.tidy();
         assert!(r.sheets["Wren"].skills.contains_key("Harbor Master"));
+    }
+
+    #[test]
+    fn renaming_changes_names_and_no_numbers() {
+        let mut r = rules();
+        r.resolve(&req("Observation", "hard", "the tide")).unwrap();
+        let mut q = req("Observation", "", "Hale");
+        q.opponent = "Hale".into();
+        q.opponent_score = 15;
+        r.resolve(&q).unwrap();
+        let before = r.sheets["Wren"].clone();
+        apply_line(&mut r, "rename skill Observation -> Tidereading", "Wren").unwrap();
+        let s = &r.sheets["Wren"];
+        assert_eq!(s.skills["Tidereading"], before.skills["Observation"]);
+        assert!(!s.skills.contains_key("Observation"));
+        assert_eq!(s.inventory[0].bonuses["Tidereading"], 2); // gear follows
+        assert_eq!((s.xp, s.level), (before.xp, before.level));
+        // Past rulings and rivals follow, so the name change can't dodge them.
+        let c = r.resolve(&req("Tidereading", "trivial", "the tide")).unwrap();
+        assert!(c.reused && c.target == 16);
+        let mut q2 = req("Tidereading", "", "Hale again");
+        q2.opponent = "Hale".into();
+        q2.opponent_score = 4;
+        assert_eq!(r.resolve(&q2).unwrap().target, 15);
+    }
+
+    #[test]
+    fn stats_can_be_renamed_and_still_work() {
+        let mut r = rules();
+        apply_line(&mut r, "rename stat Might -> Grit", "Wren").unwrap();
+        apply_line(&mut r, "rename stat Money -> Shillings", "Wren").unwrap();
+        apply_line(&mut r, "rename stat Grit -> Brawn", "Wren").unwrap(); // by its new name too
+        assert_eq!(r.label("Might"), "Brawn");
+        assert_eq!(r.sheets["Wren"].attribute("Might"), 10);
+        let t = status_text(&r.sheets["Wren"], &r.labels);
+        assert!(t.contains("Brawn 10") && t.contains("Shillings: 0") && !t.contains("Might"));
+        // The Referee answers in the story's names.
+        let mut q = req("Wrestling", "easy", "the bear");
+        q.attribute = "Brawn".into();
+        assert_eq!(r.resolve(&q).unwrap().attribute, "Might");
+        assert!(apply_line(&mut r, "rename stat Agility -> Brawn", "Wren").is_err());
+        assert!(apply_line(&mut r, "rename stat Luck -> Fate", "Wren").is_err());
+    }
+
+    #[test]
+    fn classes_and_perks_can_be_renamed() {
+        let mut r = rules();
+        apply_line(&mut r, "class Shadow Wright", "Wren").unwrap();
+        assert_eq!(r.sheets["Wren"].class, "Shadow Wright");
+        apply_line(&mut r, "perk + Tidewise: never lost at low tide", "Wren").unwrap();
+        apply_line(&mut r, "rename perk Tidewise -> Salt Sense", "Wren").unwrap();
+        assert_eq!(r.sheets["Wren"].perks["Salt Sense"], "never lost at low tide");
+        assert!(apply_line(&mut r, "rename perk Nope -> X", "Wren").is_err());
+    }
+
+    #[test]
+    fn a_rename_cannot_smuggle_a_rank_or_clobber_a_skill() {
+        let mut r = rules();
+        assert!(apply_line(&mut r, "rename skill Observation -> Sharp Eye Expert", "Wren").is_err());
+        assert!(apply_line(&mut r, "rename skill Observation -> Strength", "Wren").is_err());
+        assert!(apply_line(&mut r, "rename skill Observation -> <b>x", "Wren").is_ok()); // cleaned
+        assert!(r.sheets["Wren"].skills.contains_key("bx"));
+        assert!(apply_line(&mut r, "rename skill Nope -> X", "Wren").is_err());
     }
 
     #[test]

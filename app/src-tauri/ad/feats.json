@@ -1,0 +1,13 @@
+{
+  "First Of Many": {
+    "for_id": "1",
+    "when": "join",
+    "about": "The first to wake here. There will be others.",
+    "skills": [
+      {
+        "skill": "Quantum Immortality",
+        "tier": "unique"
+      }
+    ]
+  }
+}

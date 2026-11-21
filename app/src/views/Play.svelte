@@ -1,8 +1,11 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { writeText } from "../lib/clipboard";
-  import { call, onGame, onTable, md, safeSvg, toast } from "../lib/api";
+  import { call, onGame, onTable, md, toast, MODELS, AGY_MODELS } from "../lib/api";
   import { music } from "../lib/music.svelte";
+  import { platform } from "../lib/platform.svelte";
+  import Art from "./Art.svelte";
+  import Maps from "./Maps.svelte";
   import { speakEntry, stopSpeaking } from "../lib/voice.svelte";
   import Entry from "./Entry.svelte";
   import Status from "./Status.svelte";
@@ -11,7 +14,7 @@
   import Sound from "./Sound.svelte";
   import Voices from "./Voices.svelte";
 
-  let { cfg, go } = $props();
+  let { cfg, save, go } = $props();
 
   let entries = $state<any[]>([]);
   let start = $state(0);
@@ -26,10 +29,13 @@
   let table = $state<any>(null);
   let memoryLine = $state("");
   let pics = $state<any[]>([]);
+  let maps = $state<any[]>([]);
   let tracks = $state<any[]>([]);
   let log: HTMLDivElement;
   let openActivity = $state<any>(null);
   let gmChat = $state(false);
+  // On a narrow screen the side panel is a full-screen sheet, opened from the composer.
+  let sideOpen = $state(false);
 
   const MODES = [["do", "> Do"], ["say", '" Say'], ["story", "~ Story"]];
   const hasSave = $derived(!!info.saves);
@@ -57,8 +63,7 @@
   }
 
   function onNewReply(e: any) {
-    if (e.music?.stop) music.stop();
-    else if (e.music?.score) music.play(e.music);
+    music.apply(e);
     if (cfg.tts_auto) speakEntry(e.text, e.voices, cfg.tts_speed);
   }
 
@@ -98,7 +103,8 @@
   }
 
   function keydown(e: KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey) {
+    // A phone keyboard's Enter makes a new line; the Send button sends.
+    if (e.key === "Enter" && !e.shiftKey && !platform.mobile) {
       e.preventDefault();
       send();
     }
@@ -123,6 +129,7 @@
 
   async function loadSide() {
     pics = await call("pictures");
+    maps = await call("maps");
     tracks = await call("tracks");
     table = await call("table_state");
     const o = await call("overview");
@@ -180,14 +187,14 @@
         {#if start > 0}<button class="ghost" onclick={older}>⬆ Show older</button>{/if}
         {#if !entries.length && !busy}
           <div class="card col" style="margin-top:8vh">
-            <h2>Claude runs the game as your Game Master</h2>
+            <h2>{cfg.engine === "antigravity" ? "Antigravity" : cfg.engine === "other" ? (cfg.other_model || "Your chosen model") : "Claude"} runs the game as your Game Master</h2>
             <p class="muted">It follows the campaign's instructions and everything in its files, and it remembers.</p>
             {#if hasSave}<button class="primary" onclick={() => begin("save")}>▶ Resume from the latest save</button>{/if}
             <button class:primary={!hasSave} onclick={() => begin("new")}>✨ Start a new game</button>
             <button onclick={() => begin("files")}>▶ Resume from the campaign files</button>
             <div class="row">
               <button class="ghost" onclick={copyGame}>📋 Copy for a chat elsewhere</button>
-              <button class="ghost" onclick={() => (side = "table")}>👥 Play together</button>
+              <button class="ghost" onclick={() => { side = "table"; sideOpen = true; }}>👥 Play together</button>
             </div>
           </div>
         {/if}
@@ -212,6 +219,7 @@
           <button class="ghost small" disabled={busy} onclick={() => send("/scene")}>Scene</button>
           <button class="ghost small" disabled={busy} onclick={() => send("/save")}>💾 /save</button>
           <button class="ghost small" onclick={() => go("scribe")}>✏ Scribe</button>
+          <button class="small narrow-only" onclick={() => { sideOpen = true; loadSide(); }}>☰ Status, map, table…</button>
           {#if busy}<button class="small danger" onclick={() => call("stop_turn")}>⏹ Stop</button>{/if}
         </div>
         {#if waitingOnYou}
@@ -220,12 +228,24 @@
             <button onclick={() => call("table_send_now").then(() => loadSide()).catch(toast)}>▶ Send the round now</button>
           </div>
         {/if}
-        <textarea rows="2" bind:value={input} onkeydown={keydown} placeholder={'What do you do?   > act   "speak"   ~ narrate   /help'} aria-label="Your action"></textarea>
+        <div class="send-row">
+          <textarea rows="2" bind:value={input} onkeydown={keydown} placeholder={'What do you do?   > act   "speak"   ~ narrate   /help'} aria-label="Your action"></textarea>
+          <button class="primary narrow-only" disabled={!input.trim()} onclick={() => send()}>Send</button>
+        </div>
         <div class="row small muted">
           <div class="gauge" class:high={pctContext > 85} title="Context used before older turns get condensed"><i style:width="{pctContext}%"></i></div>
           <span>{Math.round((info.last_prompt_tokens ?? 0) / 1000)}k / {Math.round((info.context_limit ?? 0) / 1000)}k</span>
           {#if info.condensed?.times}<span>· condensed {info.condensed.times}×</span>{/if}
           {#if info.cost}<span>· ≈ ${info.cost.toFixed(2)}</span>{/if}
+          {#if cfg.engine === "antigravity"}
+            <select class="small" style="width:auto;padding:2px 6px" bind:value={cfg.agy_model} onchange={() => save?.()} aria-label="Antigravity model" title="Switch who runs the GM in Antigravity">
+              {#each AGY_MODELS as m}<option value={m.id}>{m.name}</option>{/each}
+            </select>
+          {:else if cfg.engine === "claude_code" || cfg.engine === "api"}
+            <select class="small" style="width:auto;padding:2px 6px" bind:value={cfg.model} onchange={() => save?.()} aria-label="Claude model" title="Switch Claude model">
+              {#each MODELS as m}<option value={m.id}>{m.name}</option>{/each}
+            </select>
+          {/if}
           <span class="grow" style="text-align:right">{memoryLine}</span>
           {#if entries.length}<button class="ghost small" onclick={endChat}>End chat…</button>{/if}
         </div>
@@ -233,9 +253,10 @@
     </div>
   </div>
 
-  <aside class="side">
+  <aside class="side" class:open={sideOpen}>
     <div class="side-tabs">
-      {#each [["status", "Status"], ["pics", "🖼"], ["music", "🎵"], ["voices", "💬"], ["table", "👥"]] as [id, name]}
+      <button class="tab narrow-only" style="flex:none" aria-label="Back to the story" onclick={() => (sideOpen = false)}>← Story</button>
+      {#each [["status", "Status"], ["pics", "🖼"], ["map", "🗺"], ["music", "🎵"], ["voices", "💬"], ["table", "👥"]] as [id, name]}
         <button class="tab" class:on={side === id} aria-label={id} onclick={() => { side = id; loadSide(); }}>{name}</button>
       {/each}
     </div>
@@ -244,9 +265,9 @@
         <Status bind:rules />
       {:else if side === "pics"}
         {#if !pics.length}<p class="small muted">None yet. The GM draws maps, items and characters when they matter to the story.</p>{/if}
-        {#each pics as p}
-          <figure class="pic" style="margin-inline:0">{@html safeSvg(p.svg)}<figcaption>{p.title}</figcaption></figure>
-        {/each}
+        {#each pics as p}<Art {p} />{/each}
+      {:else if side === "map"}
+        <Maps list={maps} />
       {:else if side === "music"}
         <Sound {cfg} />
         {#if !tracks.length}<p class="small muted">The GM's tracks appear here once it composes some.</p>{/if}

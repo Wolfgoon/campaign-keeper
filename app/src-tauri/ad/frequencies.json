@@ -1,0 +1,848 @@
+{
+ "_source": "Wolfgang's file (design/AD-magic-crafting-world.md). 'place' is the number counted in places from 5 the way the code keeps it: 0-10 as written, 10 + k is 10 + k, 0 - k is -k. Players are told only places 0-10 and the spectrums they hold (item 73).",
+ "frequencies": [
+  {
+   "place": 13,
+   "name": "quantum",
+   "spectrum": "probability manipulation",
+   "does": "You can weight odds in the system causing improbable things to occur to your will allowing probability frequency but it is incredibly taxing to the user"
+  },
+  {
+   "place": 12,
+   "name": "planck",
+   "spectrum": "energy control",
+   "does": "You can control in fine detail any type of energy allows for enchanting frequency"
+  },
+  {
+   "place": 11,
+   "name": "gamma",
+   "spectrum": "E destruction",
+   "does": "You can vaguely destroy matter into energy itself allows for true destruction frequency but it is very taxing to the user and for going backward in time for negative time frequency but it is very taxing to the user"
+  },
+  {
+   "place": 10,
+   "name": "x-ray",
+   "spectrum": "M destruction",
+   "does": "You can vaguely destroy matter into its lowest building blocks allows for destruction frequency but it is taxing to the user"
+  },
+  {
+   "place": 9,
+   "name": "ultraviolet",
+   "spectrum": "death",
+   "does": "Allows for necromancy and great debuffs for death frequency"
+  },
+  {
+   "place": 8,
+   "name": "violet",
+   "spectrum": "absence",
+   "does": "You can control shadows and minor debuffs for dark frequency"
+  },
+  {
+   "place": 7,
+   "name": "indigo",
+   "spectrum": "entropy",
+   "does": "Make energy disperse bringing balance to things cooling stuff down allowing for cold frequency"
+  },
+  {
+   "place": 6,
+   "name": "blue",
+   "spectrum": "liquid",
+   "does": "Water and other liquids can bend to your will allowing liquid frequency and the processing of liquids in general allowing for alchemy frequency"
+  },
+  {
+   "place": 5,
+   "name": "green",
+   "spectrum": "solids",
+   "does": "Make stuff like metal earth and everything solid move and bend to your will allowing solid frequency and for durability increase of solid objects which includes yourself and other allowing for hardening frequency"
+  },
+  {
+   "place": 4,
+   "name": "yellow",
+   "spectrum": "gas",
+   "does": "air and other gases can bend to your will allowing gas frequency and the decrease of friction allowing for speed frequency"
+  },
+  {
+   "place": 3,
+   "name": "orange",
+   "spectrum": "heat",
+   "does": "Cause imbalance through the focusing of energy into things heating them up allowing for hot frequency"
+  },
+  {
+   "place": 2,
+   "name": "red",
+   "spectrum": "presence",
+   "does": "You can control electromagnetic waves and illusions for light frequency"
+  },
+  {
+   "place": 1,
+   "name": "infrared",
+   "spectrum": "life",
+   "does": "Allows for control of nature and healing for life frequency"
+  },
+  {
+   "place": 0,
+   "name": "micro",
+   "spectrum": "M creation",
+   "does": "You can vaguely create matter from its lowest building blocks allows for creation frequency but it is taxing to the user"
+  },
+  {
+   "place": -1,
+   "name": "radar",
+   "spectrum": "E creation",
+   "does": "You can vaguely create matter from energy itself allows for true creation frequency but it is very taxing to the user and for going forward in time for positive time frequency but it is very taxing to the user"
+  },
+  {
+   "place": -2,
+   "name": "longwave",
+   "spectrum": "molecular control",
+   "does": "You can control in fine detail matter allows for chemistry frequency"
+  },
+  {
+   "place": -3,
+   "name": "gravitational",
+   "spectrum": "dimensional manipulation",
+   "does": "You can control space and time entirely according to your will allowing dimensional frequency but it is incredibly taxing to the user"
+  }
+ ],
+ "base_frequency": {
+  "name": "Base frequency",
+  "spectrum": "N/A mix of all"
+ },
+ "surroundings": {
+  "_about": "What puts each frequency into a place (engine/surroundings.py). Weights are FILL-INS, not Wolfgang's numbers: tune freely. Keys are places (5 = solids). Within `radius` metres; things count less with distance.",
+  "radius": 4,
+  "thing_radius": 8,
+  "everywhere": 0.15,
+  "materials": {
+   "air": {
+    "4": 1.0
+   },
+   "stone": {
+    "5": 1.0
+   },
+   "bedrock": {
+    "5": 1.0
+   },
+   "dirt": {
+    "5": 1.0,
+    "1": 0.1
+   },
+   "grass": {
+    "5": 0.8,
+    "1": 0.6
+   },
+   "sand": {
+    "5": 1.0
+   },
+   "clay": {
+    "5": 0.9,
+    "6": 0.1
+   },
+   "gravel": {
+    "5": 1.0
+   },
+   "snow": {
+    "7": 0.8,
+    "6": 0.3
+   },
+   "water": {
+    "6": 1.0
+   },
+   "mud": {
+    "6": 0.6,
+    "5": 0.6
+   },
+   "coal": {
+    "5": 1.2
+   },
+   "copper ore": {
+    "5": 1.0
+   },
+   "iron ore": {
+    "5": 1.0
+   },
+   "silver ore": {
+    "5": 1.0
+   },
+   "gold ore": {
+    "5": 1.0
+   },
+   "crystal": {
+    "5": 1.0
+   }
+  },
+  "light": {
+   "day": {
+    "2": 6.0
+   },
+   "dark": {
+    "8": 6.0
+   },
+   "night_cold": {
+    "7": 2.0
+   }
+  },
+  "things": [
+   {
+    "words": [
+     "fire",
+     "flame",
+     "torch",
+     "lava",
+     "ember",
+     "furnace",
+     "forge",
+     "campfire"
+    ],
+    "add": {
+     "3": 60.0
+    }
+   },
+   {
+    "words": [
+     "ice",
+     "frost",
+     "snow"
+    ],
+    "add": {
+     "7": 6.0
+    }
+   },
+   {
+    "words": [
+     "stream",
+     "pond",
+     "lake",
+     "spring",
+     "well",
+     "river"
+    ],
+    "add": {
+     "6": 8.0
+    }
+   },
+   {
+    "words": [
+     "oak",
+     "willow",
+     "tree",
+     "bush",
+     "nettle",
+     "thorn",
+     "moss",
+     "mushroom",
+     "berries",
+     "root",
+     "flower",
+     "fern",
+     "log",
+     "branch",
+     "cattail",
+     "pine",
+     "fir",
+     "spruce",
+     "birch",
+     "cone"
+    ],
+    "add": {
+     "1": 3.0,
+     "5": 1.0
+    }
+   },
+   {
+    "words": [
+     "boulder",
+     "rock",
+     "spire",
+     "stone",
+     "flint",
+     "scree",
+     "wall"
+    ],
+    "add": {
+     "5": 2.0
+    }
+   },
+   {
+    "words": [
+     "bone",
+     "skull",
+     "corpse",
+     "carcass",
+     "grave"
+    ],
+    "add": {
+     "9": 4.0
+    }
+   }
+  ],
+  "living_creature": {
+   "1": 3.0
+  },
+  "dead_creature": {
+   "9": 5.0
+  },
+  "hazard_kinds": {
+   "burn": {
+    "3": 4.0
+   },
+   "cold": {
+    "7": 4.0
+   },
+   "poison": {
+    "9": 3.0
+   }
+  }
+ },
+ "semi_skills": {
+  "_note": "Semi skills (items 52, 47; the neodymium table: 'the semi skill from neodymium'): one basic skill per frequency held, weak, can be projectiled for attack. Each does what the neodymium table gives its frequency; 'power' and 'kind' are fill-ins. 'taxing' follows Wolfgang's words for the spectrum: taxing x3, very taxing x10, incredibly taxing x30 the amplitude for the same power. Frequency has no mass (item 85): every semi skill flies straight. The half places (5.5 hardening, 4.5 speed, 6.5 analysing; Wolfgang 11-19: 'the half is just a place marker for the fact that' these spectrums give access to more than one frequency) are second semi skills of solids, gas and liquid, with 50% amplitude loss ('impure'). 'lasting' ones stay on until stopped or unpaid, with upkeep every 10 s (item 24).",
+  "13": {
+   "what": "a flicker of probability",
+   "does": "weights the odds: it cannot miss",
+   "effect": "hurt",
+   "kind": "pierce",
+   "power": 3,
+   "color": "#f2e6ff",
+   "taxing": 30,
+   "sure": true
+  },
+  "12": {
+   "what": "a pulse of energy control",
+   "does": "manipulates nearby energy",
+   "effect": "hurt",
+   "kind": "burn",
+   "power": 5,
+   "color": "#fff1a8"
+  },
+  "11": {
+   "what": "a flicker of true destruction",
+   "does": "destroys the target into energy",
+   "effect": "hurt",
+   "kind": "burn",
+   "power": 10,
+   "color": "#ffffff",
+   "taxing": 10
+  },
+  "10": {
+   "what": "a mote of unmaking",
+   "does": "destroys the target into the materials it is made from",
+   "effect": "hurt",
+   "kind": "cut",
+   "power": 9,
+   "color": "#d8e4ff",
+   "taxing": 3
+  },
+  "9": {
+   "what": "a touch of death",
+   "does": "raises the dead that have no soul",
+   "effect": "raise",
+   "kind": null,
+   "power": 0,
+   "color": "#6a2a7a"
+  },
+  "8": {
+   "what": "a shred of shadow",
+   "does": "creates concealing shadows",
+   "effect": "dim",
+   "kind": null,
+   "power": 2,
+   "color": "#2e2440"
+  },
+  "7": {
+   "what": "a mote of cold",
+   "does": "disperses the energy of the target",
+   "effect": "hurt",
+   "kind": "cold",
+   "power": 6,
+   "color": "#a8dcff"
+  },
+  "6": {
+   "what": "a pull of liquid",
+   "does": "attracts liquids to a set distance",
+   "effect": "pull",
+   "kind": null,
+   "power": 2,
+   "color": "#3d8bff"
+  },
+  "5": {
+   "what": "a pull of solids",
+   "does": "attracts solid things to a set distance",
+   "effect": "pull",
+   "kind": "blunt",
+   "power": 3,
+   "color": "#a89a80"
+  },
+  "4": {
+   "what": "a pull of air",
+   "does": "attracts gases to a set distance",
+   "effect": "pull",
+   "kind": null,
+   "power": 1,
+   "color": "#e8f2ff"
+  },
+  "3": {
+   "what": "a mote of heat",
+   "does": "gathers energy in the target",
+   "effect": "hurt",
+   "kind": "burn",
+   "power": 6,
+   "color": "#ff7a2a"
+  },
+  "2": {
+   "what": "a flash of illusion",
+   "does": "creates an illusion",
+   "effect": "dazzle",
+   "kind": null,
+   "power": 1,
+   "color": "#fff6c8"
+  },
+  "1": {
+   "what": "a mote of life",
+   "does": "heals",
+   "effect": "heal",
+   "kind": null,
+   "power": 6,
+   "color": "#7dff8a"
+  },
+  "0": {
+   "what": "a lump of made matter",
+   "does": "creates an object from nearby materials",
+   "effect": "hurt",
+   "kind": "blunt",
+   "power": 5,
+   "color": "#c8b890",
+   "taxing": 3
+  },
+  "-1": {
+   "what": "a lump of matter made from energy",
+   "does": "creates an object from energy",
+   "effect": "hurt",
+   "kind": "blunt",
+   "power": 6,
+   "color": "#e0d0a0",
+   "taxing": 10
+  },
+  "-2": {
+   "what": "a jolt of molecular control",
+   "does": "manipulates nearby atoms",
+   "effect": "hurt",
+   "kind": "cut",
+   "power": 5,
+   "color": "#b0ffe0"
+  },
+  "-3": {
+   "what": "a fold of space",
+   "does": "bends space",
+   "effect": "hurt",
+   "kind": "pierce",
+   "power": 9,
+   "color": "#8060ff",
+   "taxing": 30
+  },
+  "5.5": {
+   "name": "Hardening semi skill",
+   "of": 5,
+   "what": "hardening",
+   "does": "hardens a person or object (item 21: what is hardened can't flex, so it moves slower)",
+   "effect": "harden",
+   "kind": null,
+   "power": 4,
+   "color": "#c8c4b4",
+   "lasting": true,
+   "impure": 0.5
+  },
+  "4.5": {
+   "name": "Speed semi skill",
+   "of": 4,
+   "what": "lessened friction",
+   "does": "decreases the friction of a person or object (item 22: how much it helps depends on strength)",
+   "effect": "speed",
+   "kind": null,
+   "power": 4,
+   "color": "#f2eaa0",
+   "lasting": true,
+   "impure": 0.5
+  },
+  "6.5": {
+   "name": "Analysis semi skill",
+   "of": 6,
+   "what": "an analysis",
+   "does": "analyzes nearby materials for common names",
+   "effect": "analyse",
+   "kind": null,
+   "power": 4,
+   "color": "#9fd4ff",
+   "impure": 0.5
+  }
+ },
+ "direct": {
+  "_note": "Direct skills and anything frequental on a person (items 13, 42, 48, and 'Weapons': no weapon or device can bypass the 10x remaining-amplitude or 10% max rule if frequental in nature and without consent): without consent it needs overpower: 10x the amplitude the person has remaining, and when they are exhausted or near it, 10% of their maximum (read as the target's). Thrown semi skills too. Creatures have no soul prism yet: a creature's amplitude is a fill-in, its level x creature_amplitude_per_level.",
+  "creature_amplitude_per_level": 10
+ },
+ "overuse_pain_fades_per_s": 0.05,
+ "upkeep": {
+  "_note": "Item 24: lasting effects cost exponential upkeep per 10 seconds. Fill-in: the k-th payment (k = 0, 1, 2...) is first_share x growth^k of the amplitude first put in.",
+  "every_s": 10,
+  "first_share": 0.1,
+  "growth": 2
+ },
+ "falloff_half_m": 15,
+ "_falloff_note": "Wolfgang 11-19: frequency projectiles don't fall (no mass), but their power drops off with distance. Fill-in: it halves every falloff_half_m metres flown.",
+ "creatures": {
+  "_note": "The world's own creatures (Wolfgang 11-19): frequencies fixed by what the creature is; they have only semi skills and minor racial skills. 'semi' is the one it throws when angry (none for the shy). Everyone holds 5. Racial: speed (x), shrugs_off (+, share of every blow its hide takes), attack (x). All fill-ins, matched by words in the creature's name (first match wins). Dungeon creatures are the world hoppers' and keep their magic (cores). Stereotypical magical creatures (Wolfgang 11-19: dragons, unicorns...) come first, so 'frost wolf' is matched as frost before wolf.",
+  "every_s": 7,
+  "range": 12,
+  "kinds": [
+   {
+    "words": [
+     "dragon",
+     "wyvern",
+     "drake"
+    ],
+    "frequencies": [
+     3,
+     4,
+     5
+    ],
+    "semi": 3,
+    "racial": {
+     "name": "Dragon Scales",
+     "about": "Blows and heat alike glance off its scales",
+     "shrugs_off": 0.35,
+     "attack": 1.3
+    }
+   },
+   {
+    "words": [
+     "unicorn"
+    ],
+    "frequencies": [
+     1,
+     2,
+     5
+    ],
+    "semi": 2,
+    "racial": {
+     "name": "Horn of Life",
+     "about": "Its wounds close as it runs",
+     "speed": 1.3
+    }
+   },
+   {
+    "words": [
+     "phoenix",
+     "firebird"
+    ],
+    "frequencies": [
+     1,
+     3,
+     4,
+     5
+    ],
+    "semi": 3,
+    "racial": {
+     "name": "Rebirth Flame",
+     "about": "Burns bright and fast",
+     "speed": 1.2
+    }
+   },
+   {
+    "words": [
+     "griffin",
+     "gryphon",
+     "roc"
+    ],
+    "frequencies": [
+     4,
+     5
+    ],
+    "semi": 4,
+    "racial": {
+     "name": "Storm Wings",
+     "about": "Strikes from the air",
+     "speed": 1.3,
+     "attack": 1.15
+    }
+   },
+   {
+    "words": [
+     "frost",
+     "ice",
+     "yeti"
+    ],
+    "frequencies": [
+     5,
+     7
+    ],
+    "semi": 7,
+    "racial": {
+     "name": "Winter Coat",
+     "about": "The cold is its own",
+     "shrugs_off": 0.1
+    }
+   },
+   {
+    "words": [
+     "fire",
+     "flame",
+     "ember",
+     "salamander",
+     "hellhound"
+    ],
+    "frequencies": [
+     3,
+     5
+    ],
+    "semi": 3,
+    "racial": {
+     "name": "Burning Hide",
+     "about": "Hot to the touch",
+     "attack": 1.15
+    }
+   },
+   {
+    "words": [
+     "wraith",
+     "ghost",
+     "specter",
+     "spectre",
+     "shade",
+     "banshee"
+    ],
+    "frequencies": [
+     5,
+     8,
+     9
+    ],
+    "semi": 8,
+    "racial": {
+     "name": "Half There",
+     "about": "Blows pass half through it",
+     "shrugs_off": 0.4
+    }
+   },
+   {
+    "words": [
+     "basilisk",
+     "lich",
+     "necro"
+    ],
+    "frequencies": [
+     5,
+     9
+    ],
+    "semi": 7,
+    "racial": {
+     "name": "Death Gaze",
+     "about": "Its look chills",
+     "attack": 1.2
+    }
+   },
+   {
+    "words": [
+     "kraken",
+     "serpent",
+     "naga",
+     "mermaid",
+     "kelpie"
+    ],
+    "frequencies": [
+     5,
+     6
+    ],
+    "semi": 6,
+    "racial": {
+     "name": "Of the Deep",
+     "about": "Strong in water",
+     "attack": 1.2
+    }
+   },
+   {
+    "words": [
+     "wisp",
+     "sprite",
+     "fairy",
+     "faerie",
+     "pixie"
+    ],
+    "frequencies": [
+     1,
+     2,
+     5
+    ],
+    "semi": 2,
+    "racial": {
+     "name": "Glimmer",
+     "about": "Hard to see, hard to catch",
+     "speed": 1.4
+    }
+   },
+   {
+    "words": [
+     "golem",
+     "troll",
+     "giant"
+    ],
+    "frequencies": [
+     5
+    ],
+    "semi": 5,
+    "racial": {
+     "name": "Stone Body",
+     "about": "Barely feels a blow",
+     "shrugs_off": 0.3,
+     "speed": 0.8
+    }
+   },
+   {
+    "words": [
+     "dryad",
+     "treant",
+     "mandrake"
+    ],
+    "frequencies": [
+     1,
+     5
+    ],
+    "semi": 5,
+    "racial": {
+     "name": "Rooted",
+     "about": "Part of the wood",
+     "shrugs_off": 0.15
+    }
+   },
+   {
+    "words": [
+     "wolf",
+     "hound",
+     "fox"
+    ],
+    "frequencies": [
+     5,
+     8
+    ],
+    "semi": 8,
+    "racial": {
+     "name": "Pack Hunter",
+     "about": "Moves in the shadows it makes",
+     "speed": 1.1
+    }
+   },
+   {
+    "words": [
+     "boar",
+     "pig",
+     "bear"
+    ],
+    "frequencies": [
+     5
+    ],
+    "semi": 5,
+    "racial": {
+     "name": "Thick Hide",
+     "about": "Blows glance off",
+     "shrugs_off": 0.15
+    }
+   },
+   {
+    "words": [
+     "crow",
+     "raven",
+     "bird",
+     "owl"
+    ],
+    "frequencies": [
+     4,
+     5,
+     8
+    ],
+    "semi": 8,
+    "racial": {
+     "name": "Wings",
+     "about": "Hard to reach",
+     "speed": 1.0
+    }
+   },
+   {
+    "words": [
+     "snake",
+     "viper",
+     "adder"
+    ],
+    "frequencies": [
+     5,
+     7
+    ],
+    "semi": 7,
+    "racial": {
+     "name": "Cold Blood",
+     "about": "Its bite chills",
+     "attack": 1.15
+    }
+   },
+   {
+    "words": [
+     "frog",
+     "toad",
+     "fish",
+     "newt"
+    ],
+    "frequencies": [
+     5,
+     6
+    ],
+    "semi": 6,
+    "racial": {
+     "name": "Slick Skin",
+     "about": "Slips out of reach",
+     "speed": 1.1
+    }
+   },
+   {
+    "words": [
+     "lizard",
+     "salamander"
+    ],
+    "frequencies": [
+     3,
+     5
+    ],
+    "semi": 3,
+    "racial": {
+     "name": "Sun Warmed",
+     "about": "Holds the heat it basks in",
+     "speed": 1.1
+    }
+   },
+   {
+    "words": [
+     "rabbit",
+     "hare",
+     "deer",
+     "mouse",
+     "mice"
+    ],
+    "frequencies": [
+     4,
+     5
+    ],
+    "semi": null,
+    "racial": {
+     "name": "Quick",
+     "about": "Gone before you reach it",
+     "speed": 1.2
+    }
+   },
+   {
+    "words": [
+     ""
+    ],
+    "frequencies": [
+     5
+    ],
+    "semi": 5,
+    "racial": null
+   }
+  ]
+ }
+}

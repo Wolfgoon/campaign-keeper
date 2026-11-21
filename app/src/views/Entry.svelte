@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { md, safeSvg } from "../lib/api";
+  import { md } from "../lib/api";
+  import Art from "./Art.svelte";
 
   let { e, speak = null } = $props();
 
@@ -63,13 +64,13 @@
 {:else if e.role === "assistant"}
   <div class="msg-gm">{@html md(e.text)}</div>
   {#each e.pictures ?? [] as p}
-    <figure class="pic" style="margin-inline:0">
-      {@html safeSvg(p.svg)}
-      {#if p.title}<figcaption>{p.title}</figcaption>{/if}
-    </figure>
+    <Art {p} />
   {/each}
   {#if e.rpg?.changes?.length}
     <div class="sys-notes">{#each e.rpg.changes as c}<span class={noteClass(c)}>{c}</span>{/each}</div>
+  {/if}
+  {#if e.map_notes?.length}
+    <div class="sys-notes">{#each e.map_notes as n}<span>🗺 {n}</span>{/each}</div>
   {/if}
   {#if e.saved_as}<div class="msg-note">Saved to {e.saved_as}</div>{/if}
   {#if speak}

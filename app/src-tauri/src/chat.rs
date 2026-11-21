@@ -117,6 +117,10 @@ pub struct Session {
     pub cc_reset: bool,
     /// Changes the rules refused, for the GM's next turn.
     pub rpg_notices: Vec<String>,
+    /// How the maps look now, for the GM's next turn.
+    pub map_updates: Vec<String>,
+    /// Which edition of the GM's instructions this chat has.
+    pub prompt_v: u32,
 
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -145,6 +149,8 @@ impl Default for Session {
             recall_seen: Vec::new(),
             cc_reset: false,
             rpg_notices: Vec::new(),
+            map_updates: Vec::new(),
+            prompt_v: 0,
             extra: Map::new(),
         }
     }

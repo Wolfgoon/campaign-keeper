@@ -11,9 +11,13 @@ use crate::util::atomic_write;
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct Config {
-    /// "claude_code", "api" or "other".
+    /// "claude_code", "api", "other" or "antigravity".
     pub engine: String,
     pub claude_path: String,
+    /// Where the Antigravity CLI (`agy`) lives, if it isn't found on its own.
+    pub agy_path: String,
+    /// Model passed to `agy --model`; empty uses Antigravity's default.
+    pub agy_model: String,
     pub api_key: String,
     pub remember_key: bool,
     pub model: String,
@@ -51,6 +55,20 @@ pub struct Config {
     pub continuity_check: bool,
     pub playstyle_enabled: bool,
 
+    /// Turn the GM's pictures into pixel art.
+    pub pixel_art: bool,
+    pub pixel_size: u32,
+    pub pixel_colors: usize,
+    /// "none", "fal", or "openai" (any OpenAI-compatible image server).
+    pub image_provider: String,
+    pub image_url: String,
+    pub image_key: String,
+    pub image_model: String,
+
+    /// A Google sign-in client typed into Settings. Blank uses the one this copy was built with.
+    pub google_client_id: String,
+    pub google_client_secret: String,
+
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -60,6 +78,8 @@ impl Default for Config {
         Config {
             engine: "claude_code".into(),
             claude_path: String::new(),
+            agy_path: String::new(),
+            agy_model: String::new(),
             api_key: String::new(),
             remember_key: false,
             model: "claude-opus-5-5".into(),
@@ -87,15 +107,39 @@ impl Default for Config {
             context_mode: "smart".into(),
             continuity_check: false,
             playstyle_enabled: true,
+            pixel_art: true,
+            pixel_size: 96,
+            pixel_colors: 16,
+            image_provider: "none".into(),
+            image_url: String::new(),
+            image_key: String::new(),
+            image_model: String::new(),
+            google_client_id: String::new(),
+            google_client_secret: String::new(),
             extra: Map::new(),
         }
     }
+}
+
+static DATA_ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+/// Phones have no home folder: everything lives under the app's own data folder, set at startup.
+pub fn set_data_root(root: PathBuf) {
+    let _ = DATA_ROOT.set(root);
+}
+
+/// True on Android and iOS, where there are no command-line tools and no folder picker.
+pub fn mobile() -> bool {
+    cfg!(any(target_os = "android", target_os = "ios"))
 }
 
 /// Settings live where 1.x kept them. `CK_DATA_DIR` moves everything, for tests.
 pub fn config_dir() -> PathBuf {
     if let Ok(d) = std::env::var("CK_DATA_DIR") {
         return PathBuf::from(d);
+    }
+    if let Some(r) = DATA_ROOT.get() {
+        return r.join("config");
     }
     dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("campaign-keeper")
 }
@@ -106,15 +150,35 @@ pub fn local_dir() -> PathBuf {
     if let Ok(d) = std::env::var("CK_DATA_DIR") {
         return PathBuf::from(d).join("local");
     }
+    if let Some(r) = DATA_ROOT.get() {
+        return r.join("local");
+    }
     dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("Campaign Keeper")
+}
+
+/// Where campaigns go when the player doesn't pick a folder: stories downloaded from their
+/// account, and every campaign on a phone.
+pub fn library_dir() -> PathBuf {
+    if let Ok(d) = std::env::var("CK_DATA_DIR") {
+        return PathBuf::from(d).join("campaigns");
+    }
+    if let Some(r) = DATA_ROOT.get() {
+        return r.join("campaigns");
+    }
+    dirs::document_dir().or_else(dirs::home_dir).unwrap_or_else(|| PathBuf::from(".")).join("Campaign Keeper")
 }
 
 impl Config {
     pub fn load() -> Config {
-        std::fs::read_to_string(config_dir().join("config.json"))
+        let mut c: Config = std::fs::read_to_string(config_dir().join("config.json"))
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        // Claude Code and Antigravity are desktop programs: a phone uses a key or another service.
+        if mobile() && matches!(c.engine.as_str(), "claude_code" | "antigravity") {
+            c.engine = "other".into();
+        }
+        c
     }
 
     pub fn save(&self) -> Result<(), String> {

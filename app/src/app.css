@@ -40,7 +40,7 @@
 
 * { box-sizing: border-box; }
 html, body, #app { height: 100%; margin: 0; }
-body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--ui); overflow: hidden; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--ui); overflow: hidden; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
 h1, h2, h3 { font-family: var(--story); font-weight: 600; margin: 0 0 .4em; line-height: 1.2; }
 h1 { font-size: 28px; } h2 { font-size: 20px; } h3 { font-size: 15px; }
 p { margin: 0 0 .7em; }
@@ -111,6 +111,8 @@ label.check { display: flex; gap: 8px; align-items: flex-start; }
 .msg-note { text-align: center; color: var(--ink-2); font-size: 12px; }
 .pic { margin: 8px 0; max-width: 460px; }
 .pic svg { width: 100%; height: auto; display: block; border-radius: 6px; }
+.pic img { width: 100%; height: auto; display: block; border-radius: 3px; image-rendering: pixelated; }
+.pic.tiny { max-width: 192px; }
 .pic figcaption { font-size: 12px; color: var(--ink-2); margin-top: 3px; }
 details.recall { font-size: 12px; color: var(--ink-2); }
 details.recall summary { cursor: pointer; }
@@ -153,6 +155,11 @@ details.recall ul { margin: 4px 0; padding-left: 18px; }
 .status .sect { margin-top: 8px; border-top: 1px dashed var(--sys-line); padding-top: 6px; }
 .status button { padding: 0 6px; font-size: 11px; font-family: var(--mono); color: var(--gold); border-color: var(--gold); background: none; }
 
+/* maps */
+.map-pre { font: 12px/1.15 var(--mono); background: var(--sys-bg); color: var(--ink); border: 1px solid var(--line); border-radius: 3px; padding: 8px; overflow: auto; margin: 6px 0; white-space: pre; max-height: 52vh; }
+.map-wide { position: fixed; inset: 40px; z-index: 22; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; box-shadow: 0 8px 40px rgb(0 0 0 / 50%); }
+.map-wide .map-pre { flex: 1; max-height: none; font-size: 15px; }
+
 /* files */
 .split { display: flex; flex: 1; min-width: 0; }
 .tree { width: 280px; flex: none; border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
@@ -187,3 +194,35 @@ details.recall ul { margin: 4px 0; padding-left: 18px; }
 .toast { position: fixed; bottom: 96px; left: 50%; transform: translateX(-50%); z-index: 30; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 14px; box-shadow: var(--shadow); max-width: 70%; }
 .modal-back { position: fixed; inset: 0; background: rgb(0 0 0 / 45%); display: flex; z-index: 25; }
 .modal { margin: auto; width: min(460px, 92%); }
+
+/* phones and narrow windows */
+.send-row { display: flex; gap: 6px; align-items: stretch; }
+.send-row textarea { flex: 1; min-width: 0; }
+.narrow-only { display: none; }
+@media (max-width: 760px) {
+  .narrow-only { display: inline-block; }
+  button { padding: 7px 12px; }
+  /* 16px stops phones zooming the page when a field is tapped. */
+  input, textarea, select { font-size: 16px; }
+  .topbar { overflow-x: auto; white-space: nowrap; scrollbar-width: none; padding: 2px 6px; }
+  .topbar::-webkit-scrollbar { display: none; }
+  .topbar > * { flex: none; }
+  .topbar .grow { display: none; }
+  .topbar .title { max-width: 130px; margin-right: 4px; }
+  .tab { padding: 10px 9px; }
+  .pad { padding: 12px; }
+  .welcome { padding: 16px; }
+  .log { padding: 12px 10px 8px; }
+  .msg-gm { font-size: 16px; }
+  .msg-you { max-width: 92%; }
+  .composer { padding: 6px 8px; }
+  .side { display: none; position: fixed; inset: 0; width: auto; z-index: 21; border: none; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  .side.open { display: flex; }
+  .side-tabs { overflow-x: auto; }
+  .split { flex-direction: column; }
+  .tree { width: auto; max-height: 34%; border-right: none; border-bottom: 1px solid var(--line); }
+  .tree button { padding: 7px 6px; }
+  .reader { padding: 12px; }
+  .activity, .map-wide { inset: 6px; }
+  .toast { max-width: 92%; bottom: 130px; }
+}

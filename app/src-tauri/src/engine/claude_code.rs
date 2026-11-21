@@ -90,7 +90,8 @@ pub fn stream(cfg: &Config, req: &Request, on_delta: &mut dyn FnMut(&str), cance
         .args(["--setting-sources", "", "--tools", "", "--model", &cfg.model, "--effort", &cfg.effort])
         .arg("--system-prompt-file")
         .arg(&sys);
-    if let Some(s) = &req.session {
+    let resume = req.session.as_deref().filter(|s| !s.starts_with("agy:"));
+    if let Some(s) = resume {
         cmd.arg("--resume").arg(s);
     }
     no_window(&mut cmd);
@@ -104,7 +105,7 @@ pub fn stream(cfg: &Config, req: &Request, on_delta: &mut dyn FnMut(&str), cance
         .map_err(|e| format!("Could not start Claude Code: {e}"))?;
 
     // On a resumed session only the newest message goes in; otherwise the whole replay.
-    let prompt = if req.session.is_some() {
+    let prompt = if resume.is_some() {
         req.messages.last().map(|m| m.1.clone()).unwrap_or_default()
     } else {
         flatten(&req.messages)

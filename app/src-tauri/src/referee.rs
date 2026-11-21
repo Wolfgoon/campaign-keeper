@@ -21,7 +21,7 @@ persuading or intimidating someone does. Reply with ONLY a JSON object:
 {{\"checks\": [{{
   \"character\": \"exact name from the status\",
   \"skill\": \"the exact name of a skill on their sheet if one fits (the part before the colon), otherwise a short new skill name\",
-  \"attribute\": \"Might|Agility|Endurance|Intellect|Insight|Presence\",
+  \"attribute\": \"one of the six attributes named in the status\",
   \"subject\": \"what is being attempted against, in 2-5 stable words, e.g. the cellar door\",
   \"difficulty\": \"one band\",
   \"opponent\": \"the person resisting, if any\",
@@ -44,7 +44,7 @@ check or none. Use {{\"checks\": []}} when nothing is at risk."
 fn context(rules: &Rules) -> String {
     let mut t = String::from("<status>\n");
     for s in rules.sheets.values() {
-        t.push_str(&rpg::status_text(s));
+        t.push_str(&rpg::status_text(s, &rules.labels));
         t.push_str("\n\n");
     }
     t.push_str("</status>\n");

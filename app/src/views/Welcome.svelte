@@ -1,6 +1,8 @@
 <script lang="ts">
   import { open as pick } from "@tauri-apps/plugin-dialog";
   import { call, toast } from "../lib/api";
+  import { platform } from "../lib/platform.svelte";
+  import Account from "./Account.svelte";
 
   let { cfg, open, created, join, settings } = $props();
   let making = $state(false);
@@ -12,7 +14,8 @@
   }
 
   async function create() {
-    const parent = await pick({ directory: true, title: "Where should the campaign folder go?" });
+    // A phone keeps every campaign in the app's own storage: there's no folder to choose.
+    const parent = platform.mobile ? "" : await pick({ directory: true, title: "Where should the campaign folder go?" });
     if (typeof parent !== "string") return;
     try {
       created(await call("new_campaign", { parent, title }));
@@ -30,19 +33,19 @@
   <img src="/icon.png" alt="" />
   <div>
     <h1>Campaign Keeper</h1>
-    <p class="muted">Keep your campaigns organized, and play them with Claude as your Game Master. Drop a campaign folder here to open it.</p>
+    <p class="muted">Keep your campaigns organized, and play them with Claude as your Game Master. {platform.mobile ? "" : "Drop a campaign folder here to open it."}</p>
   </div>
   {#if making}
     <div class="card col">
       <label class="field"><span>Campaign name</span><input bind:value={title} placeholder="e.g. Second Light" /></label>
       <div class="row">
-        <button class="primary" disabled={!title.trim()} onclick={create}>Choose where to put it…</button>
+        <button class="primary" disabled={!title.trim()} onclick={create}>{platform.mobile ? "Create it" : "Choose where to put it…"}</button>
         <button onclick={() => (making = false)}>Cancel</button>
       </div>
     </div>
   {:else}
     <button class="primary" onclick={() => (making = true)}>✨ Start a new campaign…</button>
-    <button onclick={browse}>📂 Open a campaign folder…</button>
+    {#if !platform.mobile}<button onclick={browse}>📂 Open a campaign folder…</button>{/if}
     <button onclick={join}>👥 Join a friend's game… <span class="muted small">no Claude account needed</span></button>
   {/if}
   {#if cfg.recent?.length}
@@ -54,5 +57,6 @@
       </div>
     {/each}
   {/if}
+  <Account {open} />
   <button class="ghost" onclick={settings}>⚙ Settings</button>
 </div>

@@ -12,11 +12,14 @@ use std::time::Instant;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter};
 
+use crate::art;
 use crate::campaign::{self, keeper};
 use crate::chat::{self, Entry, Session};
 use crate::config::Config;
 use crate::engine::{self, Request};
+use crate::map;
 use crate::memory;
+use crate::pixel;
 use crate::prompt::{self, Multi};
 use crate::referee;
 use crate::rpg::{self, Rules};
@@ -33,6 +36,8 @@ pub struct State {
     pub status: String,
     pub queue: Vec<Pending>,
     pub cancel: Arc<AtomicBool>,
+    /// The turn running now is a human GM's private chat: players must not see it stream.
+    pub private_turn: bool,
     /// Set while a table is open, so the GM gets the multiplayer rules.
     pub multi: Option<(String, bool)>,
     /// Who joined, left or changed character since the GM's last turn.
@@ -59,6 +64,7 @@ pub fn new_state() -> State {
         status: String::new(),
         queue: Vec::new(),
         cancel: Arc::new(AtomicBool::new(false)),
+        private_turn: false,
         multi: None,
         table_updates: Vec::new(),
     }
@@ -141,8 +147,10 @@ fn local_command(dir: &Path, st: &mut State, text: &str) -> Option<Result<String
             let f = format!("# Author's Note\n_Style or direction notes that shape every response. Set them in game with `/note [text]`._\n\n{body}\n");
             Some(campaign::write(dir, "00_GM/authors_note.md", &f).map(|_| "Updated the Author's Note.".to_string()))
         }
-        "/status" | "/stats" if st.rules.enabled && !st.rules.sheets.is_empty() => {
-            Some(Ok(st.rules.sheets.values().map(rpg::status_text).collect::<Vec<_>>().join("\n\n")))
+        "/status" | "/stats" if st.rules.enabled && st.rules.has_sheets() && !st.rules.is_ad() => Some(Ok(st.rules.status_all())),
+        // The AD System's window for a player: their own sheet, never the System's notes (item 73).
+        "/status" | "/stats" if st.rules.enabled && st.rules.has_sheets() => {
+            Some(Ok(st.rules.status_all().lines().filter(|l| !l.starts_with("(System only)")).collect::<Vec<_>>().join("\n")))
         }
         _ => None,
     }
@@ -242,6 +250,10 @@ fn rewind(dir: &Path, s: &mut State, keep_user: bool) -> Result<Option<usize>, S
     if let Some(prev) = s.session.entries[last_a].notebook_prev.clone() {
         let _ = atomic_write(&keeper(dir).join("gm_notebook.md"), prev.as_bytes());
     }
+    if let Some(prev) = s.session.entries[last_a].extra.get("maps_prev") {
+        map::restore(dir, prev);
+        s.session.map_updates.clear();
+    }
     if let Some(snap) = load_snapshots(dir).into_iter().find(|x| x.idx == last_u) {
         s.rules = if keep_user { snap.after_checks } else { snap.before };
         rpg::save(dir, &s.rules)?;
@@ -257,6 +269,7 @@ fn run_turn(app: &AppHandle, st: &Shared, p: &Pending) -> Result<(), String> {
     let (cfg, dir, cancel) = {
         let mut s = st.lock().map_err(|_| "state lost")?;
         s.cancel = Arc::new(AtomicBool::new(false));
+        s.private_turn = p.private;
         (s.cfg.clone(), s.dir.clone().ok_or("No campaign is open.")?, s.cancel.clone())
     };
     let word = p.text.split_whitespace().next().unwrap_or("");
@@ -283,8 +296,9 @@ fn run_turn(app: &AppHandle, st: &Shared, p: &Pending) -> Result<(), String> {
     {
         let mut s = st.lock().map_err(|_| "state lost")?;
         let multi = s.multi.as_ref().map(|(host, gm)| Multi { host: host.clone(), human_gm: *gm });
-        let rules_on = s.rules.enabled;
-        if s.session.system.is_empty() {
+        let rules_on = s.rules.enabled.then_some(s.rules.is_ad());
+        if s.session.system.is_empty() || s.session.prompt_v != prompt::version(&cfg) {
+            s.session.prompt_v = prompt::version(&cfg);
             s.session.system = prompt::build_system(&dir, &cfg, rules_on, multi.as_ref());
             s.session.known = campaign::known(&dir);
             s.session.known_v = 2;
@@ -368,6 +382,8 @@ fn run_turn(app: &AppHandle, st: &Shared, p: &Pending) -> Result<(), String> {
     }
 
     let parsed = tags::parse(&reply.text);
+    // Painting is slow, so it happens before the state is locked.
+    let painted = paint_pictures(app, st, &cfg, &parsed);
     let mut s = st.lock().map_err(|_| "state lost")?;
     let mut entry = Entry::text("assistant", &reply.text);
     entry.usage = Some(reply.usage.clone());
@@ -381,7 +397,14 @@ fn run_turn(app: &AppHandle, st: &Shared, p: &Pending) -> Result<(), String> {
         atomic_write(&keeper(&dir).join("gm_notebook.md"), n.as_bytes())?;
         s.session.known = campaign::known(&dir);
     }
-    keep_media(&dir, &parsed, &mut entry);
+    keep_media(&dir, &cfg, &parsed, painted, &mut entry);
+    apply_maps(&dir, &parsed, &mut s, &mut entry);
+    if let Some(errors) = entry.extra.get("media_errors").and_then(Value::as_array) {
+        for e in errors.iter().filter_map(Value::as_str) {
+            note(app, &format!("A picture didn't work: {e}"));
+            s.session.rpg_notices.push(format!("A picture failed, so the player didn't see it: {e}"));
+        }
+    }
     if let Some(a) = &parsed.activity {
         s.session.activity_seq += 1;
         let mut a = a.clone();
@@ -455,7 +478,8 @@ fn compose_user_turn(app: &AppHandle, st: &Shared, p: &Pending, cfg: &Config, di
     let mut requests = Vec::new();
     // Starting or resuming a game is setup, not an attempt.
     let setup = p.label.as_deref().is_some_and(|l| l != "Round");
-    if rules.enabled && !rules.sheets.is_empty() && !is_command && !is_story && !setup {
+    // The AD System has no checks: the System judges deeds and the rules check its changes.
+    if rules.enabled && !rules.is_ad() && !rules.sheets.is_empty() && !is_command && !is_story && !setup {
         set_status(app, st, "The referee is weighing it…");
         let actions: Vec<(String, String)> = p.actions.iter().map(|(c, t)| {
             let who = if c.is_empty() { rules.sheets.keys().next().cloned().unwrap_or_default() } else { c.clone() };
@@ -482,14 +506,14 @@ fn compose_user_turn(app: &AppHandle, st: &Shared, p: &Pending, cfg: &Config, di
     for e in errors {
         note(app, &format!("Check skipped: {e}"));
     }
-    if s.rules.enabled && !s.rules.sheets.is_empty() {
-        let sheets = s.rules.sheets.values().map(rpg::status_text).collect::<Vec<_>>().join("\n\n");
-        blocks.push(format!("<status_window>\n{sheets}\n</status_window>"));
+    if s.rules.enabled && s.rules.has_sheets() {
+        blocks.push(format!("<status_window>\n{}\n</status_window>", s.rules.status_all()));
     }
     if !s.session.rpg_notices.is_empty() {
         blocks.push(format!("<rpg_notice>\n{}\n</rpg_notice>", s.session.rpg_notices.join("\n")));
         s.session.rpg_notices.clear();
     }
+    blocks.append(&mut s.session.map_updates);
     if !s.table_updates.is_empty() {
         blocks.push(format!("<table_update>\n{}\n</table_update>", s.table_updates.join("\n")));
         s.table_updates.clear();
@@ -521,25 +545,91 @@ fn compose_user_turn(app: &AppHandle, st: &Shared, p: &Pending, cfg: &Config, di
     Ok(())
 }
 
-fn keep_media(dir: &Path, parsed: &tags::Parsed, entry: &mut Entry) {
+fn data_uri(png: &[u8]) -> String {
+    use base64::Engine;
+    format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png))
+}
+
+fn wants_pixels(cfg: &Config, p: &Value) -> bool {
+    match p["style"].as_str() {
+        Some("vector") => false,
+        Some("pixel") => true,
+        _ => cfg.pixel_art,
+    }
+}
+
+fn pixel_opts(cfg: &Config, p: &Value) -> pixel::Opts {
+    let num = |k: &str| p[k].as_str().and_then(|v| v.parse::<u32>().ok());
+    pixel::Opts {
+        size: num("px").unwrap_or(cfg.pixel_size),
+        colors: num("colors").map_or(cfg.pixel_colors, |c| c as usize),
+        dither: p["dither"].as_str().is_some_and(|d| d == "on"),
+        palette: p["palette"].as_str().and_then(pixel::palette_from),
+    }
+}
+
+/// Ask the image model for each picture with a prompt. One painting per entry in `parsed.pictures`.
+fn paint_pictures(app: &AppHandle, st: &Shared, cfg: &Config, parsed: &tags::Parsed) -> Vec<Option<Result<Vec<u8>, String>>> {
+    parsed
+        .pictures
+        .iter()
+        .map(|p| {
+            let prompt = p["prompt"].as_str().filter(|t| !t.trim().is_empty())?;
+            if !art::enabled(cfg) {
+                return None;
+            }
+            set_status(app, st, "Painting a picture…");
+            let title = p["title"].as_str().unwrap_or("Picture");
+            Some(art::paint(cfg, title, prompt, wants_pixels(cfg, p)))
+        })
+        .collect()
+}
+
+fn keep_media(dir: &Path, cfg: &Config, parsed: &tags::Parsed, painted: Vec<Option<Result<Vec<u8>, String>>>, entry: &mut Entry) {
     let mut pics = Vec::new();
-    for p in &parsed.pictures {
+    let mut refused = Vec::new();
+    for (p, paint) in parsed.pictures.iter().zip(painted) {
         let title = p["title"].as_str().unwrap_or("Picture");
-        let file = keeper(dir).join("pictures").join(format!("{}.svg", slug(title)));
-        match p["svg"].as_str() {
-            Some(svg) => {
-                let _ = atomic_write(&file, svg.as_bytes());
-                pics.push(p.clone());
+        let base = keeper(dir).join("pictures").join(slug(title));
+        let (svg_file, png_file) = (base.with_extension("svg"), base.with_extension("png"));
+        let mut pic = json!({ "title": title, "kind": p["kind"] });
+        let made = if let Some(result) = paint {
+            let _ = std::fs::remove_file(&svg_file);
+            Some(result.and_then(|bytes| if wants_pixels(cfg, p) { pixel::from_image(&bytes, &pixel_opts(cfg, p)) } else { pixel::shrink_image(&bytes, 640) }))
+        } else if let Some(rows) = p["sprite"].as_str() {
+            Some(pixel::sprite(rows, p["palette"].as_str().unwrap_or("")))
+        } else if let Some(svg) = p["svg"].as_str() {
+            let _ = atomic_write(&svg_file, svg.as_bytes());
+            let _ = std::fs::remove_file(&png_file); // a redraw replaces the old pixels
+            pic["svg"] = json!(svg);
+            wants_pixels(cfg, p).then(|| pixel::from_svg(svg, &pixel_opts(cfg, p)))
+        } else {
+            // <picture title="..."/>: show a kept one again.
+            if let Ok(svg) = std::fs::read_to_string(&svg_file) {
+                pic["svg"] = json!(svg);
             }
-            None => {
-                if let Ok(svg) = std::fs::read_to_string(&file) {
-                    pics.push(json!({ "title": title, "kind": p["kind"], "svg": svg }));
-                }
+            if let Ok(png) = std::fs::read(&png_file) {
+                pic["png"] = json!(data_uri(&png));
             }
+            None
+        };
+        match made {
+            Some(Ok(png)) => {
+                let _ = atomic_write(&png_file, &png);
+                pic["png"] = json!(data_uri(&png));
+            }
+            Some(Err(e)) => refused.push(format!("{title}: {e}")),
+            None => {}
+        }
+        if pic.get("svg").is_some() || pic.get("png").is_some() {
+            pics.push(pic);
         }
     }
     if !pics.is_empty() {
         entry.extra.insert("pictures".into(), json!(pics));
+    }
+    if !refused.is_empty() {
+        entry.extra.insert("media_errors".into(), json!(refused));
     }
     if let Some(m) = &parsed.music {
         let mut m = m.clone();
@@ -555,6 +645,37 @@ fn keep_media(dir: &Path, parsed: &tags::Parsed, entry: &mut Entry) {
     if !parsed.voices.is_empty() {
         entry.extra.insert("voices".into(), json!(parsed.voices));
     }
+    if let Some(a) = &parsed.ambience {
+        entry.extra.insert("ambience".into(), a.clone());
+    }
+}
+
+/// Apply the GM's map changes. What was refused goes back to it next turn.
+fn apply_maps(dir: &Path, parsed: &tags::Parsed, s: &mut State, entry: &mut Entry) {
+    let (mut before, mut notes) = (Vec::new(), Vec::new());
+    for m in &parsed.maps {
+        let name = m["name"].as_str().unwrap_or("");
+        let body = m["body"].as_str().unwrap_or("");
+        match map::apply(dir, name, body, m["edit"].as_bool().unwrap_or(false), &mut before) {
+            Ok(o) => {
+                if !o.note.is_empty() && !notes.contains(&o.note) {
+                    notes.push(o.note);
+                }
+                if !o.render.is_empty() {
+                    s.session.map_updates.push(o.render);
+                }
+                s.session.rpg_notices.extend(o.errors.into_iter().map(|e| format!("Map refused: {e}")));
+            }
+            Err(e) => s.session.rpg_notices.push(format!("Map refused: {e}")),
+        }
+    }
+    if !before.is_empty() {
+        entry.extra.insert("maps_prev".into(), json!(before));
+        s.session.known = campaign::known(dir);
+    }
+    if !notes.is_empty() {
+        entry.extra.insert("map_notes".into(), json!(notes));
+    }
 }
 
 /// Apply what the GM's reply changed. A refused change goes back to the GM next turn.
@@ -563,6 +684,34 @@ fn apply_rpg(dir: &Path, s: &mut State, parsed: &tags::Parsed, entry: &mut Entry
         return Ok(());
     }
     let mut changes = Vec::new();
+    if s.rules.is_ad() {
+        // The System saw the use since its last look in the status window it just answered.
+        s.rules.ad.looked();
+        if let Some(sheet) = parsed.rpg_sheet.as_ref().and_then(|v| s.rules.ad.sheet_from_json(v)) {
+            let key = s.rules.ad.sheet_key(&sheet.name);
+            let blank = key.as_ref().and_then(|k| s.rules.ad.sheets.get(k)).is_none_or(|x| x.skills.is_empty() && x.level == 1 && x.xp == crate::ad::Big::default());
+            if blank {
+                let mut sheet = sheet;
+                changes.push(format!("Status window opened for {}", sheet.name));
+                changes.extend(sheet.drain());
+                s.rules.ad.sheets.insert(key.unwrap_or_else(|| sheet.name.clone()), sheet);
+            }
+        }
+        let default = s.rules.names().into_iter().next().unwrap_or_default();
+        for line in &parsed.rpg_lines {
+            match s.rules.apply(line, &default) {
+                // For the System alone (item 73): back to the GM next turn, never shown to the player.
+                Ok(m) if m.starts_with(crate::ad::SYSTEM_ONLY) => s.session.rpg_notices.push(m.trim_start_matches(crate::ad::SYSTEM_ONLY).to_string()),
+                Ok(m) => changes.push(m),
+                Err(e) => s.session.rpg_notices.push(format!("Refused: {line} ({e})")),
+            }
+        }
+        rpg::save(dir, &s.rules)?;
+        if !changes.is_empty() {
+            entry.rpg = Some(json!({ "changes": changes }));
+        }
+        return Ok(());
+    }
     if let Some(v) = &parsed.rpg_sheet {
         if let Some(sheet) = rpg::sheet_from_json(v) {
             // A blank sheet from joining the table gives way to the GM's real one, once.

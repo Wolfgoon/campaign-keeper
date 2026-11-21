@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { getCurrentWebview } from "@tauri-apps/api/webview";
-  import { call, bindToast, toast } from "./lib/api";
+  import { listen } from "@tauri-apps/api/event";
+  import { call, bindToast, toast, inApp } from "./lib/api";
+  import { platform, loadPlatform } from "./lib/platform.svelte";
   import { music } from "./lib/music.svelte";
   import Welcome from "./views/Welcome.svelte";
   import Overview from "./views/Overview.svelte";
@@ -20,6 +22,14 @@
   let settingsOpen = $state(false);
   let toastText = $state("");
   let toastTimer: any;
+  // Account sync: "" (signed out), working, ok, conflict or error.
+  let syncState = $state("");
+  let syncNote = $state("");
+  let conflict = $state<any>(null);
+  let askConflict = $state(false);
+  let opening = $state(false);
+  // Bumped when the account's copy replaces the open game, so every view reads it afresh.
+  let epoch = $state(0);
 
   const TABS = [
     ["overview", "🏠 Overview"], ["play", "▶ Play"], ["files", "📁 Files"], ["scribe", "✏ Scribe"], ["search", "🔍 Search"], ["memory", "🧠 Memory"],
@@ -43,41 +53,100 @@
     applyTheme();
   }
 
-  async function open(path: string) {
+  function took(v: any) {
+    if (v.state === "off") syncState = "";
+    else if (v.state === "error") {
+      syncState = "error";
+      syncNote = v.error;
+    } else if (v.state === "conflict") {
+      syncState = "conflict";
+      conflict = v.cloud;
+    } else {
+      syncState = "ok";
+      conflict = null;
+      syncNote = "";
+      if (v.state === "downloaded") {
+        epoch++;
+        toast("Loaded the newer version of this story from your account.");
+      }
+    }
+  }
+
+  async function sync(prefer?: string) {
+    if (syncState === "working") return;
+    syncState = "working";
     try {
-      campaign = await call("open_campaign", { path });
+      took(await call("sync_now", { prefer }));
+    } catch (e) {
+      took({ state: "error", error: String(e) });
+    }
+  }
+
+  async function settle(prefer: string) {
+    askConflict = false;
+    await sync(prefer);
+    if (syncState === "error") toast(syncNote);
+  }
+
+  async function open(path: string) {
+    if (opening) return;
+    opening = true;
+    try {
+      const c = await call<any>("open_campaign", { path });
+      // Before the game shows: another device may have played further.
+      syncState = "";
+      await sync();
+      askConflict = syncState === "conflict";
+      campaign = c;
       tab = "overview";
     } catch (e) {
       toast(e);
     }
+    opening = false;
   }
 
   async function close() {
     music.stop();
+    if (syncState === "ok" || syncState === "error") await sync();
+    syncState = "";
     await call("close_campaign");
     campaign = null;
     cfg = await call("get_config");
   }
 
   onMount(() => {
+    let un: Promise<() => void> | undefined;
     (async () => {
+      await loadPlatform();
+      // In a friend's browser the page is only ever the player's screen.
+      joined = platform.web;
       cfg = await call("get_config");
       applyTheme();
+      if (inApp && !platform.mobile) {
+        un = getCurrentWebview().onDragDropEvent((e) => {
+          if (e.payload.type === "drop" && e.payload.paths[0]) open(e.payload.paths[0]);
+        });
+      }
     })();
-    const un = getCurrentWebview().onDragDropEvent((e) => {
-      if (e.payload.type === "drop" && e.payload.paths[0]) open(e.payload.paths[0]);
-    });
-    return () => void un.then((f) => f());
+    const sy = inApp
+      ? listen<any>("sync", (e) => {
+          if (campaign && syncState !== "working") took(e.payload);
+        })
+      : Promise.resolve(() => {});
+    return () => {
+      un?.then((f) => f());
+      sy.then((f) => f());
+    };
   });
 </script>
 
 <div class="shell">
-  {#if joined}
-    <Client {cfg} leave={() => (joined = false)} settings={() => (settingsOpen = true)} />
+  {#if joined && cfg}
+    <Client {cfg} leave={() => (joined = platform.web)} settings={() => (settingsOpen = true)} />
   {:else if !campaign}
     {#if cfg}
       <div class="view">
-        <Welcome {cfg} {open} created={(c: any) => { campaign = c; tab = "play"; }} join={() => (joined = true)} settings={() => (settingsOpen = true)} />
+        <Welcome {cfg} {open} created={(c: any) => { campaign = c; tab = "play"; syncState = ""; sync(); }} join={() => (joined = true)} settings={() => (settingsOpen = true)} />
       </div>
     {/if}
   {:else}
@@ -91,12 +160,20 @@
         <span class="small muted">🎵 {music.title}</span>
         <button class="ghost small" onclick={() => music.stop()}>Stop</button>
       {/if}
+      {#if syncState}
+        <button class="ghost small" class:error={syncState === "conflict" || syncState === "error"}
+          title={syncState === "error" ? syncNote : "Your account keeps this story in step on your devices. Click to sync now."}
+          onclick={() => (syncState === "conflict" ? (askConflict = true) : sync().then(() => syncState === "error" && toast(syncNote)))}>
+          ☁ {syncState === "working" ? "Syncing…" : syncState === "ok" ? "Synced" : syncState === "conflict" ? "Choose a version" : "Not synced"}
+        </button>
+      {/if}
       <button class="ghost" onclick={() => (settingsOpen = true)} aria-label="Settings">⚙</button>
       <button class="ghost" onclick={close}>Close</button>
     </nav>
+    {#key epoch}
     <div class="view">
       <!-- Play stays mounted so a reply keeps streaming while you read a file. -->
-      <div class="view" style:display={tab === "play" ? "flex" : "none"}><Play {cfg} go={(t: string) => (tab = t)} /></div>
+      <div class="view" style:display={tab === "play" ? "flex" : "none"}><Play {cfg} save={saveCfg} go={(t: string) => (tab = t)} /></div>
       {#if tab === "overview"}<Overview go={(t: string) => (tab = t)} />
       {:else if tab === "files"}<Files />
       {:else if tab === "scribe"}<Scribe />
@@ -104,8 +181,23 @@
       {:else if tab === "memory"}<Memory />
       {/if}
     </div>
+    {/key}
   {/if}
 </div>
+
+{#if opening}<div class="toast" role="status">Opening…</div>{/if}
+{#if askConflict && conflict}
+  <div class="modal-back">
+    <div class="card col modal">
+      <h2>This story changed in two places</h2>
+      <p>It was played or edited on this device, and your account has a different version{conflict.device ? ` saved from ${conflict.device}` : ""}{conflict.modified ? ` on ${new Date(conflict.modified).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}` : ""}. Which one do you want to keep?</p>
+      <button class="primary" onclick={() => settle("local")}>Keep this device's version</button>
+      <button onclick={() => settle("cloud")}>Use the account's version</button>
+      <button class="ghost" onclick={() => (askConflict = false)}>Decide later</button>
+      <p class="small muted">If you use the account's version, this device's files are first saved in a backup on this device.</p>
+    </div>
+  </div>
+{/if}
 
 {#if settingsOpen && cfg}
   <Settings {cfg} save={saveCfg} close={() => (settingsOpen = false)} playerOnly={joined} />

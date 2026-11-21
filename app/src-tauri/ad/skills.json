@@ -1,0 +1,137 @@
+{
+ "Walking": {
+  "stat": "AGI",
+  "about": "Moving on your own legs without thinking about each step."
+ },
+ "Running": {
+  "stat": "END",
+  "about": "Faster, and costs less stamina with each level."
+ },
+ "Sneaking": {
+  "stat": "AGI",
+  "about": "Quieter footsteps."
+ },
+ "Observation": {
+  "stat": "PER",
+  "about": "Looking closely shows more about what you see."
+ },
+ "Listening": {
+  "stat": "PER",
+  "about": "Fainter sounds are heard, and their direction is clearer."
+ },
+ "Keen Sight": {
+  "stat": "PER",
+  "about": "See further."
+ },
+ "Scent Tracking": {
+  "stat": "PER",
+  "about": "Smell what is near, and what passed by."
+ },
+ "Pain Tolerance": {
+  "stat": "WIL",
+  "about": "Pain still arrives, but it shakes your actions less."
+ },
+ "First Aid": {
+  "stat": "INT",
+  "about": "Stopping bleeding works better."
+ },
+ "Unarmed": {
+  "stat": "STR",
+  "about": "Hitting with your own body."
+ },
+ "Blades": {
+  "stat": "AGI",
+  "about": "Cutting and stabbing weapons."
+ },
+ "Clubs": {
+  "stat": "STR",
+  "about": "Blunt weapons."
+ },
+ "Dodging": {
+  "stat": "AGI",
+  "about": "Getting out of the way of an attack."
+ },
+ "Thick Hide": {
+  "stat": "END",
+  "about": "Outer layers soak up more."
+ },
+ "Foraging": {
+  "stat": "INT",
+  "about": "Knowing what can be eaten."
+ },
+ "Fire Handling": {
+  "stat": "INT",
+  "about": "Using fire without being burned."
+ },
+ "Carrying": {
+  "stat": "STR",
+  "about": "Holding and hauling things."
+ },
+ "Speech": {
+  "stat": "INT",
+  "about": "Talking to others."
+ },
+ "Meditation": {
+  "stat": "WIL",
+  "about": "Resting heals faster."
+ },
+ "Adaptable": {
+  "stat": "INT",
+  "about": "Whatever you practise, you pick up a little sooner."
+ },
+ "Light Bones": {
+  "stat": "DEX",
+  "about": "Quick on your feet.",
+  "effects": {
+   "speed": 0.03
+  }
+ },
+ "Night Eyes": {
+  "stat": "INT",
+  "about": "The dark hides less from you.",
+  "effects": {
+   "sight": 0.03
+  }
+ },
+ "Heat Sense": {
+  "stat": "INT",
+  "about": "Warm things stand out.",
+  "effects": {
+   "sight": 0.02
+  }
+ },
+ "Crafting": {
+  "stat": "INT",
+  "about": "Making one thing out of others."
+ },
+ "Inspect": {
+  "stat": "INT",
+  "about": "The System shows you what a thing is: its name at first, more as the skill grows.",
+  "requires": "investigate 5 different things"
+ },
+ "Quantum Immortality": {
+  "stat": "HP",
+  "about": "When you die, the world steps back a moment and the killing blow misses. You remember dying.",
+  "on_death": "rollback"
+ },
+ "Revive": {
+  "stat": "INT",
+  "about": "Bring back someone whose death is not yet final. They return hurt; less so as the skill grows.",
+  "revive": "other",
+  "revival": true
+ },
+ "Second Breath": {
+  "stat": "HP",
+  "about": "Your own death does not always hold. You get up again, hurt, and then need a long while before it can happen again.",
+  "revive": "self",
+  "revival": true
+ },
+ "Dungeoneering": {
+  "stat": "INT",
+  "about": "Knowing how places under the world are put together, and what they hide."
+ },
+ "Movement": {
+  "stat": "AGI",
+  "about": "The body learns to keep itself up: with each level more of the balancing happens by itself, falls are broken with the arms, and getting up comes easier."
+ }
+}

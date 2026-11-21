@@ -16,7 +16,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter};
 
 use super::secure::{handshake, new_code};
-use super::{discovery, port, PROTOCOL};
+use super::{discovery, port, web, PROTOCOL};
 use crate::campaign;
 use crate::game::{self, Shared};
 use crate::rpg;
@@ -27,6 +27,69 @@ const MAX_NEW_CHARACTERS: u32 = 2;
 /// Room for a drawing, which arrives as SVG.
 const MAX_ACTION: usize = 200_000;
 const HEARTBEAT: Duration = Duration::from_secs(15);
+/// A player whose app sends heartbeats and then goes silent this long has dropped off (a phone
+/// that fell asleep, a cable pulled), and the table stops waiting for them.
+#[cfg(not(test))]
+fn quiet() -> Duration {
+    Duration::from_secs(50)
+}
+/// Tests don't wait that long, and can change it.
+#[cfg(test)]
+pub static TEST_QUIET_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(2000);
+#[cfg(test)]
+fn quiet() -> Duration {
+    Duration::from_millis(TEST_QUIET_MS.load(Ordering::Relaxed))
+}
+const MAX_TALK: usize = 200;
+/// Pictures in the transcript sent to players. Past this, older entries go without theirs, so one
+/// message always fits in a frame.
+const PICTURE_BUDGET: usize = 3_000_000;
+
+/// One player's connection, whichever way it arrived: the app's encrypted channel, or a web browser.
+pub trait Out: Send {
+    fn send(&mut self, v: &Value) -> Result<(), String>;
+    /// End the connection for both directions, so the other side finds out at once.
+    fn shutdown(&self);
+}
+
+pub trait In: Send {
+    fn recv(&mut self) -> Result<Value, String>;
+    fn set_timeout(&self, t: Option<Duration>) -> Result<(), String>;
+}
+
+impl Out for super::secure::Sender {
+    fn send(&mut self, v: &Value) -> Result<(), String> {
+        super::secure::Sender::send(self, v)
+    }
+    fn shutdown(&self) {
+        super::secure::Sender::shutdown(self)
+    }
+}
+
+impl In for super::secure::Receiver {
+    fn recv(&mut self) -> Result<Value, String> {
+        super::secure::Receiver::recv(self)
+    }
+    fn set_timeout(&self, t: Option<Duration>) -> Result<(), String> {
+        super::secure::Receiver::set_timeout(self, t)
+    }
+}
+
+/// What a table needs from the app around it: a nudge for the host's window, and a way to hand a
+/// finished round to the GM. The real app is one; tests bring their own.
+pub trait Host: Send + Sync + 'static {
+    fn changed(&self);
+    fn round(&self, st: &Shared, text: String, actions: Vec<(String, String)>) -> Result<(), String>;
+}
+
+impl Host for AppHandle {
+    fn changed(&self) {
+        let _ = self.emit("table", json!(null));
+    }
+    fn round(&self, st: &Shared, text: String, actions: Vec<(String, String)>) -> Result<(), String> {
+        game::send_round(self, st, text, actions)
+    }
+}
 
 #[derive(Serialize, Clone, Default)]
 pub struct Seat {
@@ -68,6 +131,9 @@ pub struct Inner {
 
 pub struct Table {
     pub code: String,
+    pub port: u16,
+    /// Where browsers join, when the host allows it.
+    pub web_port: Option<u16>,
     pub host_name: String,
     pub host_character: Mutex<String>,
     pub host_is_gm: bool,
@@ -87,6 +153,15 @@ impl Table {
         }
     }
 
+    /// To every connection, including people still waiting to be let in.
+    fn everyone(&self, v: &Value) {
+        if let Ok(g) = self.inner.lock() {
+            for tx in g.seats.iter().filter_map(|s| s.tx.as_ref()) {
+                let _ = tx.send(v.clone());
+            }
+        }
+    }
+
     pub fn state(&self) -> Value {
         let g = self.inner.lock().map(|g| {
             json!({
@@ -94,8 +169,20 @@ impl Table {
                 "host_action": g.host_action.is_some(), "narration": g.narration.is_some()
             })
         }).unwrap_or_default();
+        // One paste carries the address, the port and the code; over Tailscale the address is the
+        // host's Tailscale name, which MagicDNS resolves for anyone in the same tailnet.
+        let routes = super::pair::routes(self.port, &self.code);
+        let pairing = match routes.split_first() {
+            Some((first, rest)) => json!({
+                "text": &first.text, "host": &first.host, "over": first.over,
+                "others": rest.iter().map(|r| json!({ "text": &r.text, "host": &r.host, "over": r.over })).collect::<Vec<Value>>(),
+            }),
+            None => Value::Null,
+        };
         json!({
-            "code": self.code, "host": self.host_name, "host_is_gm": self.host_is_gm, "port": port(),
+            "code": self.code, "host": self.host_name, "host_is_gm": self.host_is_gm, "port": self.port,
+            "web_port": self.web_port, "address": super::local_ip().map(|ip| ip.to_string()),
+            "pairing": pairing,
             "host_character": self.host_character.lock().map(|c| c.clone()).unwrap_or_default(),
             "auto_admit": self.auto_admit.load(Ordering::Relaxed), "table": g,
         })
@@ -105,7 +192,7 @@ impl Table {
 /// Characters that exist in this campaign.
 pub fn characters(st: &Shared) -> Vec<String> {
     let Ok(s) = st.lock() else { return Vec::new() };
-    let mut v: Vec<String> = s.rules.sheets.keys().cloned().collect();
+    let mut v: Vec<String> = s.rules.names();
     if let Some(dir) = &s.dir {
         for f in campaign::files(dir) {
             if let Some(n) = f.strip_prefix("01_Character/") {
@@ -126,8 +213,8 @@ pub fn characters(st: &Shared) -> Vec<String> {
     v
 }
 
-fn notify(app: &AppHandle) {
-    let _ = app.emit("table", json!(null));
+fn notify(app: &dyn Host) {
+    app.changed();
 }
 
 /// What players may see of the chat.
@@ -135,29 +222,44 @@ fn safe_entries(st: &Shared, table: &Table) -> Vec<Value> {
     let Ok(s) = st.lock() else { return Vec::new() };
     let start = s.session.entries.len().saturating_sub(80);
     let _ = table;
-    s.session.entries[start..]
+    let mut out: Vec<Value> = s.session.entries[start..]
         .iter()
         .filter(|e| !e.flag("private") && (e.role == "assistant" || e.role == "user"))
         .map(|e| {
             let text = e.display.clone().unwrap_or_else(|| if e.role == "assistant" { crate::tags::parse(&e.plain()).display } else { e.label.clone().unwrap_or_default() });
             json!({
                 "role": e.role, "text": text, "label": e.label, "pictures": e.extra.get("pictures"),
-                "music": e.extra.get("music"), "voices": e.extra.get("voices"), "rpg": e.rpg
+                "music": e.extra.get("music"), "voices": e.extra.get("voices"), "rpg": e.rpg,
+                "ambience": e.extra.get("ambience"), "map_notes": e.extra.get("map_notes")
             })
         })
-        .collect()
+        .collect();
+    // Newest first: recent pictures are kept, and older ones dropped once the budget is spent.
+    let mut spent = 0;
+    for e in out.iter_mut().rev() {
+        if e["pictures"].is_null() {
+            continue;
+        }
+        spent += e["pictures"].to_string().len();
+        if spent > PICTURE_BUDGET {
+            e["pictures"] = Value::Null;
+        }
+    }
+    out
 }
 
 fn table_for(st: &Shared, t: &Table, character: &str, you: u64) -> Value {
-    let (sheet, activities, busy) = match st.lock() {
+    let (sheet, activities, busy, labels, maps) = match st.lock() {
         Ok(s) => (
-            s.rules.sheets.iter().find(|(k, _)| k.eq_ignore_ascii_case(character)).map(|(_, v)| v.clone()),
+            s.rules.view(character),
             s.session.activities.iter().filter(|a| a["for"].as_str().is_none_or(|f| f.eq_ignore_ascii_case(character))).cloned().collect::<Vec<_>>(),
             s.busy,
+            s.rules.labels.clone(),
+            s.dir.as_deref().map(crate::map::views).unwrap_or_default(),
         ),
-        Err(_) => (None, Vec::new(), false),
+        Err(_) => (None, Vec::new(), false, Default::default(), Vec::new()),
     };
-    json!({ "t": "table", "you": you, "busy": busy, "state": t.state(), "characters": characters(st), "sheet": sheet, "activities": activities })
+    json!({ "t": "table", "you": you, "busy": busy, "state": t.state(), "characters": characters(st), "sheet": sheet, "activities": activities, "labels": labels, "maps": maps })
 }
 
 /// Push the current picture to everyone. Called on every game event.
@@ -215,7 +317,7 @@ fn ready(t: &Table, g: &Inner) -> bool {
 }
 
 /// Send the round to the GM. `force` goes ahead without those who haven't acted.
-pub fn try_round(app: &AppHandle, st: &Shared, t: &Arc<Table>, force: bool) -> Result<bool, String> {
+pub fn try_round(app: &dyn Host, st: &Shared, t: &Arc<Table>, force: bool) -> Result<bool, String> {
     let (text, actions) = {
         let mut g = t.inner.lock().map_err(|_| "table lost")?;
         if !force && !ready(t, &g) {
@@ -255,12 +357,23 @@ pub fn try_round(app: &AppHandle, st: &Shared, t: &Arc<Table>, force: bool) -> R
         g.round += 1;
         (x, actions)
     };
-    game::send_round(app, st, text, actions)?;
+    app.round(st, text, actions)?;
     notify(app);
     Ok(true)
 }
 
-fn fail_count(t: &Table, ip: IpAddr) {
+pub(super) fn blocked(t: &Table, ip: IpAddr) -> bool {
+    t.inner.lock().map(|g| g.blocked.contains(&ip)).unwrap_or(true)
+}
+
+/// They know the code: earlier typos are forgiven.
+pub(super) fn forgive(t: &Table, ip: IpAddr) {
+    if let Ok(mut g) = t.inner.lock() {
+        g.fails.remove(&ip);
+    }
+}
+
+pub(super) fn fail_count(t: &Table, ip: IpAddr) {
     if let Ok(mut g) = t.inner.lock() {
         let n = g.fails.entry(ip).or_insert(0);
         *n += 1;
@@ -270,13 +383,13 @@ fn fail_count(t: &Table, ip: IpAddr) {
     }
 }
 
-fn serve(app: AppHandle, st: Shared, t: Arc<Table>, stream: TcpStream, addr: SocketAddr) {
+fn serve(app: Arc<dyn Host>, st: Shared, t: Arc<Table>, stream: TcpStream, addr: SocketAddr) {
     let ip = addr.ip();
-    if t.inner.lock().map(|g| g.blocked.contains(&ip)).unwrap_or(true) {
+    if blocked(&t, ip) {
         return;
     }
     let _ = stream.set_read_timeout(Some(Duration::from_secs(20)));
-    let (mut tx, mut rx) = match handshake(stream, &t.code, true) {
+    let (tx, rx) = match handshake(stream, &t.code, true) {
         Ok(p) => p,
         Err(e) => {
             if e == "code" {
@@ -285,6 +398,12 @@ fn serve(app: AppHandle, st: Shared, t: Arc<Table>, stream: TcpStream, addr: Soc
             return;
         }
     };
+    forgive(&t, ip);
+    seat(&*app, &st, &t, Box::new(tx), Box::new(rx), ip);
+}
+
+/// A connection that knows the join code: seat them, and run their side of the table until they go.
+pub(super) fn seat(app: &dyn Host, st: &Shared, t: &Arc<Table>, mut tx: Box<dyn Out>, mut rx: Box<dyn In>, ip: IpAddr) {
     let Ok(hello) = rx.recv() else { return };
     if hello["t"] != "hello" {
         return;
@@ -294,7 +413,9 @@ fn serve(app: AppHandle, st: Shared, t: Arc<Table>, stream: TcpStream, addr: Soc
         return;
     }
     // The handshake's limit ends here: a player thinking for an hour sends nothing, and that's fine.
-    if rx.set_timeout(None).is_err() {
+    // Newer apps send a heartbeat while they think, so for them real silence means they're gone.
+    let pings = hello["pings"].as_bool().unwrap_or(false);
+    if rx.set_timeout(pings.then(quiet)).is_err() {
         return;
     }
     let name = clean_name(hello["name"].as_str().unwrap_or("Player"), 40);
@@ -330,6 +451,12 @@ fn serve(app: AppHandle, st: Shared, t: Arc<Table>, stream: TcpStream, addr: Soc
             }
             g.next_id += 1;
             let id = g.next_id;
+            // Two Alexes at one table: the GM and the party need to tell them apart.
+            let (base, mut name, mut n) = (name.clone(), name, 2);
+            while t.host_name.eq_ignore_ascii_case(&name) || g.seats.iter().any(|s| s.name.eq_ignore_ascii_case(&name)) {
+                name = format!("{base} ({n})");
+                n += 1;
+            }
             let admitted = t.auto_admit.load(Ordering::Relaxed);
             g.seats.push(Seat { id, name, connected: true, admitted, token, addr: Some(ip), tx: Some(out_tx.clone()), conn, ..Default::default() });
             (id, conn)
@@ -338,7 +465,7 @@ fn serve(app: AppHandle, st: Shared, t: Arc<Table>, stream: TcpStream, addr: Soc
     if let Some(c) = back {
         table_update(&st, format!("{c}'s player is back at the table."));
     }
-    notify(&app);
+    notify(app);
     let writer = std::thread::spawn(move || {
         loop {
             // A heartbeat keeps VPNs and routers from dropping a quiet connection.
@@ -366,10 +493,12 @@ fn serve(app: AppHandle, st: Shared, t: Arc<Table>, stream: TcpStream, addr: Soc
         if !admitted {
             continue;
         }
-        handle(&app, &st, &t, id, &msg);
+        handle(app, &st, &t, id, &msg);
     }
     if let Ok(mut g) = t.inner.lock() {
         mark_gone(&mut g, id, conn);
+        // Someone who gave up before being let in isn't left on the host's list.
+        g.seats.retain(|s| s.id != id || s.admitted || s.connected);
         // Only a real goodbye: not an old connection after a rejoin.
         let left = g.seats.iter().find(|s| s.id == id && !s.connected && !s.character.is_empty()).map(|s| s.character.clone());
         drop(g);
@@ -379,8 +508,8 @@ fn serve(app: AppHandle, st: Shared, t: Arc<Table>, stream: TcpStream, addr: Soc
     }
     drop(out_tx);
     let _ = writer.join();
-    notify(&app);
-    let _ = try_round(&app, &st, &t, false);
+    notify(app);
+    let _ = try_round(app, &st, &t, false);
 }
 
 /// This connection ended. If the player has already rejoined on a newer one, leave them seated.
@@ -399,7 +528,7 @@ fn welcome(st: &Shared, t: &Arc<Table>, id: u64) {
     }
 }
 
-fn handle(app: &AppHandle, st: &Shared, t: &Arc<Table>, id: u64, msg: &Value) {
+fn handle(app: &dyn Host, st: &Shared, t: &Arc<Table>, id: u64, msg: &Value) {
     match msg["t"].as_str().unwrap_or("") {
         "claim" => {
             let character = clean_name(msg["character"].as_str().unwrap_or(""), 60);
@@ -456,6 +585,9 @@ fn handle(app: &AppHandle, st: &Shared, t: &Arc<Table>, id: u64, msg: &Value) {
         "submit" => {
             let action: String = msg["action"].as_str().unwrap_or("").chars().take(MAX_ACTION).collect();
             let pass = msg["pass"].as_bool().unwrap_or(false);
+            if !pass && action.trim().is_empty() {
+                return;
+            }
             if let Ok(mut g) = t.inner.lock() {
                 if let Some(s) = g.seats.iter_mut().find(|s| s.id == id) {
                     if let Some(why) = refused_action(&action).filter(|_| !pass) {
@@ -488,13 +620,17 @@ fn handle(app: &AppHandle, st: &Shared, t: &Arc<Table>, id: u64, msg: &Value) {
     }
 }
 
-pub fn talk(app: &AppHandle, t: &Arc<Table>, name: &str, text: &str) {
+pub fn talk(app: &dyn Host, t: &Arc<Table>, name: &str, text: &str) {
     if text.trim().is_empty() {
         return;
     }
     let line = json!({ "from": name, "text": text });
     if let Ok(mut g) = t.inner.lock() {
         g.talk.push(line.clone());
+        if g.talk.len() > MAX_TALK {
+            let extra = g.talk.len() - MAX_TALK;
+            g.talk.drain(..extra);
+        }
     }
     t.broadcast(&json!({ "t": "talk", "line": line }));
     notify(app);
@@ -516,14 +652,14 @@ fn ready_character(st: &Shared, name: &str, new: bool) {
         let form = std::fs::read_to_string(dir.join("01_Character/_TEMPLATE.md")).unwrap_or_default();
         let _ = campaign::write(&dir, &file, &form.replace("[Character]", name));
     }
-    if s.rules.enabled && !s.rules.sheets.keys().any(|k| k.eq_ignore_ascii_case(name)) {
-        s.rules.sheets.insert(name.to_string(), rpg::Sheet { name: name.to_string(), ..rpg::Sheet::default() });
+    if s.rules.enabled && !s.rules.names().iter().any(|k| k.eq_ignore_ascii_case(name)) {
+        s.rules.ensure_sheet(name);
         let _ = rpg::save(&dir, &s.rules);
     }
 }
 
 /// The host takes a character, new or existing, under the same rules as anyone else.
-pub fn claim_host(app: &AppHandle, st: &Shared, t: &Arc<Table>, character: &str, new: bool) -> Result<(), String> {
+pub fn claim_host(app: &dyn Host, st: &Shared, t: &Arc<Table>, character: &str, new: bool) -> Result<(), String> {
     let character = clean_name(character, 60);
     if character.is_empty() {
         *t.host_character.lock().map_err(|_| "table lost")? = String::new();
@@ -550,6 +686,10 @@ pub fn claim_host(app: &AppHandle, st: &Shared, t: &Arc<Table>, character: &str,
 pub fn spend(st: &Shared, character: &str, kind: &str, name: &str) -> Result<(), String> {
     let mut s = st.lock().map_err(|_| "state lost")?;
     let dir = s.dir.clone().ok_or("No campaign is open.")?;
+    if s.rules.is_ad() {
+        crate::ad::player_choice(&mut s.rules, character, kind, name)?;
+        return rpg::save(&dir, &s.rules);
+    }
     let sheet = s.rules.sheets.iter_mut().find(|(k, _)| k.eq_ignore_ascii_case(character)).map(|(_, v)| v).ok_or("No such character.")?;
     match kind {
         "attribute" => sheet.spend_attribute(name)?,
@@ -558,10 +698,26 @@ pub fn spend(st: &Shared, character: &str, kind: &str, name: &str) -> Result<(),
     rpg::save(&dir, &s.rules)
 }
 
-pub fn open(app: AppHandle, st: Shared, host_name: String, host_is_gm: bool, announce: bool) -> Result<Arc<Table>, String> {
-    let listener = TcpListener::bind(("0.0.0.0", port())).map_err(|e| format!("Couldn't open the table (port {}): {e}", port()))?;
+pub fn open(app: Arc<dyn Host>, st: Shared, host_name: String, host_is_gm: bool, announce: bool, browsers: bool) -> Result<Arc<Table>, String> {
+    open_at(app, st, host_name, host_is_gm, announce, port(), browsers.then(super::web_port))
+}
+
+/// A table on any free port, with no announcement, for tests.
+#[cfg(test)]
+pub fn open_on(app: Arc<dyn Host>, st: Shared, host_name: String, host_is_gm: bool, port: u16) -> Result<Arc<Table>, String> {
+    open_at(app, st, host_name, host_is_gm, false, port, Some(0))
+}
+
+fn open_at(app: Arc<dyn Host>, st: Shared, host_name: String, host_is_gm: bool, announce: bool, port: u16, web_port: Option<u16>) -> Result<Arc<Table>, String> {
+    let listener = TcpListener::bind(("0.0.0.0", port)).map_err(|e| format!("Couldn't open the table (port {port}): {e}"))?;
+    let pages = match web_port {
+        Some(p) => Some(TcpListener::bind(("0.0.0.0", p)).map_err(|e| format!("Couldn't open the link for web browsers (port {p}): {e}. Open the table without it, or close whatever is using that port."))?),
+        None => None,
+    };
     let t = Arc::new(Table {
         code: new_code()?,
+        port: listener.local_addr().map(|a| a.port()).unwrap_or(port),
+        web_port: pages.as_ref().and_then(|l| l.local_addr().ok()).map(|a| a.port()),
         host_name: host_name.clone(),
         host_character: Mutex::new(String::new()),
         host_is_gm,
@@ -572,6 +728,9 @@ pub fn open(app: AppHandle, st: Shared, host_name: String, host_is_gm: bool, ann
     if announce {
         let campaign = st.lock().ok().and_then(|s| s.dir.as_deref().map(campaign::name)).unwrap_or_default();
         discovery::announce(campaign, host_name, t.stop.clone());
+    }
+    if let Some(l) = pages {
+        web::start(l, app.clone(), st.clone(), t.clone())?;
     }
     let t2 = t.clone();
     listener.set_nonblocking(true).map_err(|e| e.to_string())?;
@@ -592,12 +751,13 @@ pub fn open(app: AppHandle, st: Shared, host_name: String, host_is_gm: bool, ann
 
 pub fn close(t: &Arc<Table>) {
     t.stop.store(true, Ordering::Relaxed);
-    t.broadcast(&json!({ "t": "goodbye", "reason": "The host closed the table." }));
+    t.everyone(&json!({ "t": "goodbye", "reason": "The host closed the table." }));
 }
 
 /// Let in, turn away, or remove someone.
-pub fn decide(app: &AppHandle, st: &Shared, t: &Arc<Table>, id: u64, admit: bool, block: bool) {
+pub fn decide(app: &dyn Host, st: &Shared, t: &Arc<Table>, id: u64, admit: bool, block: bool) {
     let mut let_in = false;
+    let mut left = None;
     if let Ok(mut g) = t.inner.lock() {
         let addr = g.seats.iter().find(|s| s.id == id).and_then(|s| s.addr);
         if admit {
@@ -614,6 +774,7 @@ pub fn decide(app: &AppHandle, st: &Shared, t: &Arc<Table>, id: u64, admit: bool
                     let reason = if s.admitted { "The host removed you from the table." } else { "The host didn't let you in." };
                     let _ = tx.send(json!({ "t": "goodbye", "reason": reason }));
                 }
+                left = (s.connected && !s.character.is_empty()).then(|| s.character.clone());
             }
             g.seats.retain(|s| s.id != id);
             if let (true, Some(ip)) = (block, addr) {
@@ -624,7 +785,14 @@ pub fn decide(app: &AppHandle, st: &Shared, t: &Arc<Table>, id: u64, admit: bool
     if let_in {
         welcome(st, t, id);
     }
+    if let Some(c) = left {
+        table_update(st, format!("{c}'s player left the table. Keep {c} safe in the background."));
+    }
     notify(app);
+    // With them gone, everyone still here may already have acted.
+    if !admit {
+        let _ = try_round(app, st, t, false);
+    }
 }
 
 #[cfg(test)]

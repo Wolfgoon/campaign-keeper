@@ -1,0 +1,161 @@
+{
+  "scout": {
+    "name": "Scout",
+    "about": "Sees and hears first, moves quietly.",
+    "requires": {
+      "skills": {
+        "Observation": 3,
+        "Walking": 3
+      }
+    },
+    "stats": {
+      "DEX": 2,
+      "INT": 1
+    },
+    "growth": {
+      "HP": 1,
+      "STR": 0,
+      "INT": 1,
+      "DEX": 3
+    },
+    "skills": [
+      "Sneaking",
+      "Listening",
+      "Dodging"
+    ],
+    "derived": {
+      "awareness": "int * dex"
+    },
+    "traits": {}
+  },
+  "warrior": {
+    "name": "Warrior",
+    "about": "Hits hard and keeps standing.",
+    "requires": {
+      "skills": {
+        "Unarmed": 3
+      }
+    },
+    "stats": {
+      "STR": 2,
+      "HP": 2
+    },
+    "growth": {
+      "HP": 3,
+      "STR": 3,
+      "INT": 0,
+      "DEX": 1
+    },
+    "skills": [
+      "Dodging",
+      "Clubs",
+      "Blades"
+    ],
+    "derived": {
+      "might": "str ^ 2 * hp"
+    },
+    "traits": {}
+  },
+  "healer": {
+    "name": "Healer",
+    "about": "Keeps bodies alive, their own first.",
+    "requires": {
+      "skills": {
+        "First Aid": 3
+      }
+    },
+    "stats": {
+      "INT": 3,
+      "HP": 1
+    },
+    "growth": {
+      "HP": 2,
+      "STR": 0,
+      "INT": 4,
+      "DEX": 1
+    },
+    "skills": [
+      "Meditation",
+      "Inspect"
+    ],
+    "derived": {
+      "mending": "int ^ 2 * hp"
+    },
+    "traits": {}
+  },
+  "survivor": {
+    "name": "Survivor",
+    "about": "Has been badly hurt and kept going.",
+    "requires": {
+      "skills": {
+        "Pain Tolerance": 3
+      }
+    },
+    "stats": {
+      "HP": 4
+    },
+    "growth": {
+      "HP": 5,
+      "STR": 1,
+      "INT": 0,
+      "DEX": 1
+    },
+    "skills": [
+      "First Aid",
+      "Meditation"
+    ],
+    "derived": {
+      "grit": "hp ^ 3"
+    },
+    "traits": {}
+  },
+  "forager": {
+    "name": "Forager",
+    "about": "Lives off the land.",
+    "requires": {
+      "skills": {
+        "Foraging": 3
+      }
+    },
+    "stats": {
+      "INT": 2,
+      "DEX": 1,
+      "HP": 1
+    },
+    "growth": {
+      "HP": 2,
+      "STR": 1,
+      "INT": 2,
+      "DEX": 2
+    },
+    "skills": [
+      "Inspect",
+      "Crafting"
+    ],
+    "traits": {}
+  },
+  "runner": {
+    "name": "Runner",
+    "about": "Covers ground faster than anything chasing it.",
+    "requires": {
+      "skills": {
+        "Running": 4
+      }
+    },
+    "stats": {
+      "DEX": 3,
+      "HP": 1
+    },
+    "growth": {
+      "HP": 2,
+      "STR": 1,
+      "INT": 0,
+      "DEX": 4
+    },
+    "skills": [
+      "Dodging",
+      "Sneaking"
+    ],
+    "traits": {}
+  }
+}

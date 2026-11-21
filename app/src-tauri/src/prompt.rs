@@ -13,9 +13,21 @@ use crate::util::tokens;
 const RUNNING: &str = include_str!("../prompts/running_inside.md");
 const MEMORY: &str = include_str!("../prompts/memory.md");
 const LITRPG: &str = include_str!("../prompts/litrpg.md");
+const LITRPG_AD: &str = include_str!("../prompts/litrpg_ad.md");
 const MULTIPLAYER: &str = include_str!("../prompts/multiplayer.md");
 const HUMAN_GM: &str = include_str!("../prompts/human_gm.md");
 const FALLBACK_INSTRUCTIONS: &str = include_str!("../../../TEMPLATE/00_GM/ai_dungeon_plus_instructions.txt");
+
+/// Bump when the instructions change: running chats then pick up the new abilities on their next
+/// turn, instead of only new games getting them.
+pub const PROMPT_VERSION: u32 = 1;
+
+const ART_MODEL: &str = include_str!("../prompts/art_model.md");
+
+/// The edition a chat should be on: turning the painter on or off changes what the GM may do.
+pub fn version(cfg: &Config) -> u32 {
+    PROMPT_VERSION * 2 + crate::art::enabled(cfg) as u32
+}
 
 const EMPTY_NOTEBOOK: &str = "(Empty. Write it in your first reply.)
 
@@ -70,19 +82,26 @@ fn kept_list(dir: &Path, sub: &str) -> Vec<String> {
         .map(|d| d.flatten().filter_map(|e| e.path().file_stem().map(|n| n.to_string_lossy().into_owned())).collect())
         .unwrap_or_default();
     v.sort();
+    v.dedup();
     v
 }
 
 /// The two system blocks. Frozen for a chat, so the cache stays warm; rebuilt on a fresh chat or
 /// when the chat is condensed.
-pub fn build_system(dir: &Path, cfg: &Config, rules_on: bool, multi: Option<&Multi>) -> Vec<String> {
+/// `rules`: None when the rules are off, Some(true) for the AD System, Some(false) for Classic.
+pub fn build_system(dir: &Path, cfg: &Config, rules: Option<bool>, multi: Option<&Multi>) -> Vec<String> {
     let instructions = std::fs::read_to_string(dir.join(INSTRUCTIONS)).unwrap_or_else(|_| FALLBACK_INSTRUCTIONS.to_string());
     let mut head = format!("{}\n\n{RUNNING}", instructions.trim_end());
     if cfg.memory_enabled {
         head.push_str(&format!("\n{MEMORY}"));
     }
-    if rules_on {
-        head.push_str(&format!("\n{LITRPG}"));
+    if crate::art::enabled(cfg) {
+        head.push_str(&format!("\n{ART_MODEL}"));
+    }
+    match rules {
+        Some(true) => head.push_str(&format!("\n{LITRPG_AD}")),
+        Some(false) => head.push_str(&format!("\n{LITRPG}")),
+        None => {}
     }
     if let Some(m) = multi {
         head.push_str(&format!("\n{MULTIPLAYER}"));

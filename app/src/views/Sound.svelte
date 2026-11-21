@@ -19,4 +19,7 @@
   {#if music.title}
     <div class="row small"><span class="grow">🎵 {music.title}</span><button class="ghost small" onclick={() => music.stop()}>Stop</button></div>
   {/if}
+  {#if music.ambienceName}
+    <div class="row small"><span class="grow">🌧 {music.ambienceName}</span><button class="ghost small" onclick={() => music.stopAmbience()}>Stop</button></div>
+  {/if}
 </div>

@@ -60,6 +60,23 @@ CHANGING THE NUMBERS
   window. Short in-world system messages are welcome if the setting
   calls for them.
 
+NAMES THAT FIT THE STORY
+- The names on the sheet are yours to fit the world. Rename anything when
+  a better name fits, or when the story changes what something is:
+    <rpg>
+    rename skill Varrow Streets -> Lamp-Lane Lore
+    rename perk Green Flame -> Kindled
+    rename stat Might -> Grit
+    rename stat HP -> Vigour
+    rename stat Money -> Shillings
+    class Wright of the Five Yards
+    </rpg>
+  Stats you can rename: the six attributes, HP, Stamina, Mana and Money.
+  Renaming changes only the name. Ranks, values and past rulings stay, and
+  a skill's name never includes its rank. Keep writing your changes with
+  the same short words (hp, stamina, mana, money) whatever they're called.
+  Do it when it means something, not every reply.
+
 A NEW CHARACTER
 - If there is no <status_window> yet and the character is decided, end
   your reply with their starting sheet, once:

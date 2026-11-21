@@ -1,0 +1,159 @@
+{
+  "human": {
+    "name": "Human",
+    "about": "No special gifts; learns everything a little faster.",
+    "stats": {},
+    "growth": {
+      "HP": 2,
+      "STR": 1,
+      "INT": 2,
+      "DEX": 1
+    },
+    "skills": [
+      "Adaptable"
+    ],
+    "traits": {
+      "fov": 180,
+      "night_vision": 0.15,
+      "hearing": 1.0,
+      "smell": 0.3,
+      "pain_tolerance": 0,
+      "learning": 1.15,
+      "speed": 1.0
+    }
+  },
+  "avian": {
+    "name": "Skyborn",
+    "about": "Feathered and light-boned. Sharp eyes, wide view, fragile.",
+    "covers": [
+      "feathers"
+    ],
+    "stats": {
+      "DEX": 3,
+      "INT": 1,
+      "HP": -2
+    },
+    "growth": {
+      "HP": 1,
+      "STR": 1,
+      "INT": 1,
+      "DEX": 3
+    },
+    "skills": [
+      "Keen Sight",
+      "Light Bones"
+    ],
+    "derived": {
+      "lift": "dex ^ 2 * str"
+    },
+    "traits": {
+      "fov": 300,
+      "night_vision": 0.1,
+      "hearing": 1.0,
+      "smell": 0.2,
+      "pain_tolerance": 0,
+      "learning": 1.0,
+      "speed": 1.1
+    }
+  },
+  "beastkin": {
+    "name": "Beastkin",
+    "about": "Furred. Strong nose and ears, sees well in the dark.",
+    "covers": [
+      "fur",
+      "whiskers"
+    ],
+    "stats": {
+      "STR": 2,
+      "DEX": 1,
+      "INT": -1
+    },
+    "growth": {
+      "HP": 2,
+      "STR": 2,
+      "INT": 0,
+      "DEX": 2
+    },
+    "skills": [
+      "Scent Tracking",
+      "Night Eyes"
+    ],
+    "derived": {
+      "ferocity": "str ^ 2 * dex"
+    },
+    "traits": {
+      "fov": 200,
+      "night_vision": 0.6,
+      "hearing": 1.5,
+      "smell": 1.0,
+      "pain_tolerance": 1,
+      "learning": 1.0,
+      "speed": 1.1
+    }
+  },
+  "scaled": {
+    "name": "Scaled",
+    "about": "Scales turn blades and heat. Slow in the cold.",
+    "covers": [
+      "scales"
+    ],
+    "stats": {
+      "HP": 4,
+      "DEX": -1
+    },
+    "growth": {
+      "HP": 3,
+      "STR": 2,
+      "INT": 1,
+      "DEX": 0
+    },
+    "skills": [
+      "Thick Hide",
+      "Heat Sense"
+    ],
+    "derived": {
+      "bulwark": "hp ^ 2 * str"
+    },
+    "traits": {
+      "fov": 190,
+      "night_vision": 0.3,
+      "hearing": 0.8,
+      "smell": 0.6,
+      "pain_tolerance": 1,
+      "learning": 1.0,
+      "speed": 0.95
+    }
+  },
+  "spined": {
+    "name": "Spineback",
+    "about": "Spines and claws. Whatever bites it gets hurt too.",
+    "covers": [
+      "spines",
+      "claws"
+    ],
+    "stats": {
+      "HP": 2,
+      "STR": 1,
+      "DEX": -1
+    },
+    "growth": {
+      "HP": 3,
+      "STR": 2,
+      "INT": 0,
+      "DEX": 1
+    },
+    "skills": [
+      "Unarmed",
+      "Thick Hide"
+    ],
+    "traits": {
+      "fov": 180,
+      "night_vision": 0.3,
+      "hearing": 1.0,
+      "smell": 0.5,
+      "pain_tolerance": 2,
+      "learning": 1.0,
+      "speed": 0.95
+    }
+  }
+}

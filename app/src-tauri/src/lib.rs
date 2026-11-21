@@ -2,17 +2,23 @@
 //! file only checks that a campaign is open and hands work to them. Anything slow runs off the
 //! UI thread (Tauri runs non-async commands on the main thread).
 
+pub mod account;
+pub mod ad;
+pub mod art;
 pub mod campaign;
 pub mod chat;
 pub mod config;
 pub mod engine;
 pub mod game;
+pub mod map;
 pub mod memory;
 pub mod net;
+pub mod pixel;
 pub mod prompt;
 pub mod referee;
 pub mod rpg;
 pub mod scribe;
+pub mod sync;
 pub mod tags;
 pub mod util;
 
@@ -21,7 +27,7 @@ use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value};
-use tauri::{AppHandle, Listener, Manager, State as TauriState};
+use tauri::{AppHandle, Emitter, Listener, Manager, State as TauriState};
 
 use chat::{Entry, Session};
 use config::Config;
@@ -92,14 +98,46 @@ fn claude_sign_in(s: S) -> R<()> {
     engine::claude_code::sign_in(&cfg)
 }
 
+#[tauri::command]
+fn agy_status(s: S) -> R<Value> {
+    let cfg = s.game.lock().map_err(|_| "state lost")?.cfg.clone();
+    Ok(json!({ "path": engine::antigravity::find(&cfg).map(|p| p.display().to_string()) }))
+}
+
+#[tauri::command]
+async fn agy_install() -> R<String> {
+    off_ui(engine::antigravity::install).await
+}
+
+#[tauri::command]
+fn agy_sign_in(s: S) -> R<()> {
+    let cfg = s.game.lock().map_err(|_| "state lost")?.cfg.clone();
+    engine::antigravity::sign_in(&cfg)
+}
+
+#[tauri::command]
+async fn agy_models(s: S<'_>) -> R<Vec<(String, String)>> {
+    let cfg = s.game.lock().map_err(|_| "state lost")?.cfg.clone();
+    off_ui(move || engine::antigravity::list_models(&cfg)).await
+}
+
 // --- campaigns --------------------------------------------------------------
+
+/// A chat that arrived from another device can't continue that device's Claude Code session.
+fn load_session(path: &std::path::Path) -> Session {
+    let mut s = chat::load(path).unwrap_or_default();
+    if sync::foreign_session(path, s.cc_session.as_deref()) {
+        s.cc_reset = true;
+    }
+    s
+}
 
 fn activate(s: &S, path: PathBuf) -> R<Value> {
     if !campaign::is_campaign(&path) {
-        return Err("That isn't a campaign. Drop a campaign folder (one with 00_GM … 08_Saves inside).".into());
+        return Err("That isn't a campaign. Drop a campaign folder (one with 00_GM â€¦ 08_Saves inside).".into());
     }
     let mut g = s.game.lock().map_err(|_| "state lost")?;
-    g.session = chat::load(&path).unwrap_or_default();
+    g.session = load_session(&path);
     g.rules = rpg::load(&path);
     g.dir = Some(path.clone());
     let p = path.display().to_string();
@@ -123,7 +161,12 @@ fn new_campaign(s: S, parent: String, title: String) -> R<Value> {
     if title.is_empty() {
         return Err("Give the campaign a name.".into());
     }
-    let dir = PathBuf::from(parent).join(title);
+    if title.contains(|c: char| "<>:\"/\\|?*".contains(c)) {
+        return Err("Campaign names can't contain < > : \" / \\ | ? or *".into());
+    }
+    // No folder chosen (always so on a phone): it goes with the app's other stories.
+    let parent = if parent.trim().is_empty() { config::library_dir() } else { PathBuf::from(parent) };
+    let dir = parent.join(title);
     campaign::create(&dir, title)?;
     activate(&s, dir)
 }
@@ -205,6 +248,7 @@ fn entry_view(i: usize, e: &Entry) -> Value {
         "idx": i, "role": e.role, "text": text, "label": e.label, "model": e.model, "usage": e.usage,
         "recalled": e.recalled, "rpg": e.rpg, "private": e.flag("private"),
         "pictures": e.extra.get("pictures"), "music": e.extra.get("music"), "voices": e.extra.get("voices"),
+        "ambience": e.extra.get("ambience"), "map_notes": e.extra.get("map_notes"),
         "saved_as": e.extra.get("saved_as"), "character": e.extra.get("character"), "player": e.extra.get("player"),
     })
 }
@@ -286,6 +330,22 @@ fn export_all(s: S) -> R<String> {
     Ok(t)
 }
 
+#[tauri::command]
+fn pictures(s: S) -> R<Value> {
+    use base64::Engine;
+    let root = campaign::keeper(&dir(&s)?).join("pictures");
+    let mut stems: Vec<String> = std::fs::read_dir(&root).map(|d| d.flatten().filter_map(|e| Some(e.path().file_stem()?.to_string_lossy().into_owned())).collect()).unwrap_or_default();
+    stems.sort();
+    stems.dedup();
+    Ok(stems
+        .into_iter()
+        .map(|t| {
+            let png = std::fs::read(root.join(format!("{t}.png"))).ok().map(|b| format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(b)));
+            json!({ "svg": std::fs::read_to_string(root.join(format!("{t}.svg"))).ok(), "png": png, "title": t })
+        })
+        .collect())
+}
+
 fn kept(dirpath: PathBuf, ext: &str) -> Vec<(String, String)> {
     let mut v: Vec<(String, String)> = std::fs::read_dir(dirpath)
         .map(|d| {
@@ -300,8 +360,8 @@ fn kept(dirpath: PathBuf, ext: &str) -> Vec<(String, String)> {
 }
 
 #[tauri::command]
-fn pictures(s: S) -> R<Value> {
-    Ok(kept(campaign::keeper(&dir(&s)?).join("pictures"), "svg").into_iter().map(|(t, svg)| json!({ "title": t, "svg": svg })).collect())
+fn maps(s: S) -> R<Vec<Value>> {
+    Ok(map::views(&dir(&s)?))
 }
 
 #[tauri::command]
@@ -319,7 +379,7 @@ fn rpg_state(s: S) -> R<rpg::Rules> {
 /// Turn the rules on. For an existing character a helper builds the sheet from their files;
 /// a new game gets one from the GM when the character is decided.
 #[tauri::command]
-async fn rpg_enable(s: S<'_>) -> R<rpg::Rules> {
+async fn rpg_enable(s: S<'_>, ruleset: Option<String>) -> R<rpg::Rules> {
     let (cfg, d) = {
         let g = s.game.lock().map_err(|_| "state lost")?;
         (g.cfg.clone(), g.dir.clone().ok_or("No campaign is open.")?)
@@ -328,8 +388,18 @@ async fn rpg_enable(s: S<'_>) -> R<rpg::Rules> {
     let sheets = off_ui(move || referee::sheets_from_campaign(&cfg, &d2)).await?;
     let mut g = s.game.lock().map_err(|_| "state lost")?;
     g.rules.enabled = true;
+    // "ad" is the AD System (Spirit's rules); anything else is Classic.
+    g.rules.ruleset = if ruleset.as_deref() == Some("ad") { "ad".into() } else { String::new() };
     for sheet in sheets {
-        g.rules.sheets.entry(sheet.name.clone()).or_insert(sheet);
+        if g.rules.is_ad() {
+            if g.rules.ad.sheet_key(&sheet.name).is_none() {
+                let mut a = g.rules.ad.from_classic(&sheet);
+                a.drain();
+                g.rules.ad.sheets.insert(a.name.clone(), a);
+            }
+        } else {
+            g.rules.sheets.entry(sheet.name.clone()).or_insert(sheet);
+        }
     }
     rpg::save(&d, &g.rules)?;
     // The GM needs the rules: the next turn rebuilds its instructions.
@@ -348,6 +418,13 @@ fn rpg_disable(s: S) -> R<()> {
     g.session.system.clear();
     g.session.cc_reset = true;
     chat::save(&d, &g.session)
+}
+
+/// The AD System's sheets as the player sees them (item 73: only what they hold).
+#[tauri::command]
+fn rpg_views(s: S) -> R<Vec<Value>> {
+    let g = s.game.lock().map_err(|_| "state lost")?;
+    Ok(g.rules.names().iter().filter_map(|n| g.rules.view(n)).collect())
 }
 
 /// Spending points is the player's choice, not the model's, so it's only reachable from here.
@@ -464,11 +541,11 @@ fn scribe_restore(s: S, backup: String) -> R<()> {
 // --- table ------------------------------------------------------------------
 
 #[tauri::command]
-fn table_open(app: AppHandle, s: S, host_is_gm: bool, announce: bool) -> R<Value> {
+fn table_open(app: AppHandle, s: S, host_is_gm: bool, announce: bool, browsers: Option<bool>) -> R<Value> {
     dir(&s)?;
     let name = s.game.lock().map_err(|_| "state lost")?.cfg.player_name.clone();
     let name = if name.trim().is_empty() { "Host".to_string() } else { name };
-    let t = table::open(app, s.game.clone(), name.clone(), host_is_gm, announce)?;
+    let t = table::open(Arc::new(app), s.game.clone(), name.clone(), host_is_gm, announce, browsers.unwrap_or(true))?;
     {
         let mut g = s.game.lock().map_err(|_| "state lost")?;
         g.multi = Some((name, host_is_gm));
@@ -526,7 +603,7 @@ fn table_host_character(app: AppHandle, s: S, character: String, new: bool) -> R
 fn table_host_action(app: AppHandle, s: S, text: String, gm_narration: bool) -> R<()> {
     let t = table_of(&s)?;
     if !gm_narration && t.host_character.lock().map(|c| c.is_empty()).unwrap_or(true) {
-        return Err("Choose your character in the 👥 Table panel first, or press Send the round now.".into());
+        return Err("Choose your character in the ðŸ‘¥ Table panel first, or press Send the round now.".into());
     }
     if let Ok(mut g) = t.inner.lock() {
         if gm_narration {
@@ -555,9 +632,23 @@ async fn table_scan() -> R<Vec<Value>> {
     off_ui(|| net::discovery::scan(3)).await
 }
 
+/// Read the invitation a host copied: its address, port and join code in one line.
+#[tauri::command]
+fn pair_parse(text: String) -> R<Value> {
+    let i = net::pair::parse(&text)?;
+    Ok(json!({ "addr": i.addr, "code": i.code }))
+}
+
 #[tauri::command]
 async fn client_join(app: AppHandle, s: S<'_>, addr: String, code: String, name: String) -> R<()> {
+    // A whole invitation pasted into either field is as good as its two halves.
+    let (addr, code) = match net::pair::parse(&addr) {
+        Ok(i) => (i.addr, i.code),
+        Err(_) => (addr, code),
+    };
     let a = app.clone();
+    // Hang up any earlier connection first, so its goodbye can't land on the new one.
+    s.net.lock().map_err(|_| "state lost")?.client = None;
     let tx = off_ui(move || net::client::join(a, &addr, &code, &name)).await?;
     s.net.lock().map_err(|_| "state lost")?.client = Some(tx);
     Ok(())
@@ -575,6 +666,103 @@ fn client_leave(s: S) -> R<()> {
     Ok(())
 }
 
+// --- account and sync -------------------------------------------------------
+
+#[tauri::command]
+fn app_info() -> Value {
+    json!({ "mobile": config::mobile(), "library": config::library_dir().display().to_string() })
+}
+
+#[tauri::command]
+fn account_status() -> Value {
+    account::status()
+}
+
+#[tauri::command]
+async fn account_begin() -> R<Value> {
+    off_ui(account::begin).await
+}
+
+#[tauri::command]
+async fn account_poll(device_code: String) -> R<Option<String>> {
+    off_ui(move || account::poll(&device_code)).await
+}
+
+#[tauri::command]
+fn account_sign_out() {
+    account::sign_out()
+}
+
+#[tauri::command]
+async fn account_stories() -> R<Vec<Value>> {
+    off_ui(sync::stories).await
+}
+
+#[tauri::command]
+async fn account_fetch(file_id: String) -> R<String> {
+    off_ui(move || sync::fetch(&file_id)).await
+}
+
+#[tauri::command]
+async fn account_remove(file_id: String) -> R<()> {
+    off_ui(move || account::remove(&file_id)).await
+}
+
+/// After the account's copy replaced the files: read the game again from them.
+fn reload(game: &Shared, d: &std::path::Path) {
+    let Ok(mut g) = game.lock() else { return };
+    if g.dir.as_deref() != Some(d) {
+        return;
+    }
+    g.session = load_session(d);
+    g.rules = rpg::load(d);
+    let memory = g.cfg.memory_enabled;
+    drop(g);
+    if memory {
+        memory::index_in_background(d);
+    }
+}
+
+#[tauri::command]
+async fn sync_now(s: S<'_>, prefer: Option<String>) -> R<Value> {
+    let d = {
+        let g = s.game.lock().map_err(|_| "state lost")?;
+        if g.busy {
+            return Err("Wait for the GM to finish, then sync.".into());
+        }
+        g.dir.clone().ok_or("No campaign is open.")?
+    };
+    if prefer.as_deref() == Some("cloud") && s.net.lock().map_err(|_| "state lost")?.table.is_some() {
+        return Err("Close the table before replacing this game with the account's copy.".into());
+    }
+    let d2 = d.clone();
+    let v = off_ui(move || sync::run(&d2, prefer.as_deref())).await?;
+    if v["state"] == "downloaded" {
+        reload(&s.game, &d);
+    }
+    Ok(v)
+}
+
+/// The quiet sync after each turn. Whatever happens is told to the page as a "sync" event.
+fn autosync(app: &AppHandle) {
+    if !account::signed_in() {
+        return;
+    }
+    let Some(d) = app.state::<App>().game.lock().ok().filter(|g| !g.busy).and_then(|g| g.dir.clone()) else { return };
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let v = match sync::run_if_idle(&d) {
+            None => return,
+            Some(Ok(v)) => v,
+            Some(Err(e)) => json!({ "state": "error", "error": e }),
+        };
+        if v["state"] == "downloaded" {
+            reload(&app.state::<App>().game, &d);
+        }
+        let _ = app.emit("sync", v);
+    });
+}
+
 fn install_crash_log() {
     let default = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -587,37 +775,49 @@ fn install_crash_log() {
     }));
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    install_crash_log();
-    let game: Shared = Arc::new(Mutex::new(game::new_state()));
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .manage(App { game, net: Mutex::new(Net::default()) })
         .setup(|app| {
-            // Keep a table's players in step with the game, whatever happened in it.
+            // A phone has no home folder: settings and stories live in the app's own storage.
+            if config::mobile() {
+                config::set_data_root(app.path().app_data_dir()?);
+            }
+            install_crash_log();
+            let game: Shared = Arc::new(Mutex::new(game::new_state()));
+            app.manage(App { game, net: Mutex::new(Net::default()) });
             let handle = app.handle().clone();
             app.listen("game", move |ev| {
                 let Ok(v) = serde_json::from_str::<Value>(ev.payload()) else { return };
+                let kind = v["kind"].as_str().unwrap_or("");
+                // Keep a table's players in step with the game, whatever happened in it.
                 let st = handle.state::<App>();
-                let Some(t) = st.net.lock().ok().and_then(|n| n.table.clone()) else { return };
-                match v["kind"].as_str().unwrap_or("") {
-                    "stream" => table::relay_stream(&t, &v["data"]),
-                    "entry" | "done" => table::sync(&st.game, &t),
-                    _ => {}
+                if let Some(t) = st.net.lock().ok().and_then(|n| n.table.clone()) {
+                    match kind {
+                        // A human GM's private chat with the AI is never shown to the table, live or after.
+                        "stream" if !st.game.lock().map(|g| g.private_turn).unwrap_or(true) => table::relay_stream(&t, &v["data"]),
+                        "entry" | "done" => table::sync(&st.game, &t),
+                        _ => {}
+                    }
+                }
+                if kind == "done" {
+                    autosync(&handle);
                 }
             });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            get_config, set_config, list_models, claude_status, claude_install, claude_sign_in,
+            get_config, set_config, list_models, claude_status, claude_install, claude_sign_in, agy_status, agy_install, agy_sign_in, agy_models,
             open_campaign, new_campaign, close_campaign, overview, list_files, read_file, write_file, rename_file,
             trash_file, search_files, store_save, new_session_log, get_entries, play_state, send_text, begin, stop_turn,
-            end_chat, notebook, activity_close, export_all, pictures, tracks, rpg_state, rpg_enable, rpg_disable, rpg_spend,
+            end_chat, notebook, activity_close, export_all, pictures, maps, tracks, rpg_state, rpg_enable, rpg_disable, rpg_spend, rpg_views,
             memory_status, memory_list, memory_search, memory_add, memory_update, memory_delete, memory_catch_up,
             scribe_run, scribe_presets, scribe_apply, scribe_restore, table_open, table_close, table_state, table_decide,
             table_auto_admit, table_host_character, table_host_action, table_send_now, table_talk, table_scan,
-            client_join, client_send, client_leave
+            client_join, client_send, client_leave, pair_parse,
+            app_info, account_status, account_begin, account_poll, account_sign_out, account_stories, account_fetch, account_remove, sync_now
         ])
         .run(tauri::generate_context!())
         .expect("error while running Campaign Keeper");

@@ -1,28 +1,76 @@
-Campaign Keeper 1.0.5: how to install
+Campaign Keeper: how to install
 
-ON A MAC: "Campaign Keeper 1.0.5.dmg"
-  Open it and drag Campaign Keeper into Applications. The first time you
-  open it, macOS may say it can't verify the app: click Done, then open
-  System Settings > Privacy & Security and click "Open Anyway".
+PLAYING TOGETHER: everyone at a table needs version 3.0 or later (or a
+web browser). An older app is told to update when it tries to join.
 
-ON WINDOWS: "Campaign Keeper Setup 1.0.5.exe"
+ON WINDOWS: "Campaign Keeper Setup 3.0.0.exe"
   Double-click it. If Windows says "Windows protected your PC", click
   "More info", then "Run anyway". Click Install: it installs just for you
   (no administrator needed), adds Start menu and desktop shortcuts, and
   can be removed in Settings > Apps. When Windows Firewall asks, allow
   Campaign Keeper on private networks so friends can join your games.
 
+ON AN ANDROID PHONE OR TABLET: "Campaign Keeper 3.0.0 (Android).apk"
+  Open the file on the device. Android asks whether to allow installing
+  apps from your browser or files app: allow it, then tap Install. If
+  Play Protect asks, choose "Install anyway". On Android the GM runs on
+  an API key or one of the "Other models"; Claude Code and Antigravity
+  are for computers.
+
+PLAY ON YOUR PHONE WITH YOUR COMPUTER'S CLAUDE CODE (via Tailscale)
+  Claude Code runs only on computers, but your phone can play a game
+  whose GM runs on your computer, from anywhere:
+  1. Install Tailscale (free, tailscale.com) on the computer and on the
+     phone, and sign in to the same account on both. Each device gets
+     a Tailscale name, like "my-pc", shown in the Tailscale app.
+  2. On the computer: set up Claude Code in Settings, open the
+     campaign, then Play tab > Table > Open the table. Leave the
+     computer on with Campaign Keeper open (stop it from sleeping).
+  3. On the phone, open Campaign Keeper and tap "Join a friend's game",
+     then paste the invitation from the computer's table panel (it
+     starts with campaignkeeper://): the address and the join code
+     fill in by themselves. Typing the computer's Tailscale name and
+     the join code by hand works too. Or, in the phone's browser
+     (with "Let friends join from a web browser" ticked on the
+     computer), open the table's link with the Tailscale name in
+     place of the number, for example http://my-pc:47122, then type
+     a name and the join code.
+  4. Take your character and play. Every reply comes from Claude Code
+     on the computer, using your Pro or Max plan.
+  Tick "Let people in without asking" in the computer's table panel if
+  you don't want to approve your own phone each time.
+
+ON AN IPHONE, IPAD, OR ANYTHING ELSE WITH A WEB BROWSER
+  To join a friend's game there is nothing to install. The host opens
+  their table (Play tab > Table > Open the table) and sends you a link
+  and a join code. Open the link in your browser, type your name and
+  the code, and play. On the same Wi-Fi it just works; from somewhere
+  else, both of you need a free VPN such as Tailscale.
+
+ON A MAC: "Campaign Keeper 1.0.5.dmg" (version 2.x coming)
+  Open it and drag Campaign Keeper into Applications. The first time you
+  open it, macOS may say it can't verify the app: click Done, then open
+  System Settings > Privacy & Security and click "Open Anyway".
+
 ON LINUX OR A STEAM DECK: "Campaign Keeper 1.0.5 (Linux & Steam Deck).tar.gz"
+  (version 2.x coming)
   In Desktop Mode, right-click it > Extract > Extract archive here, open
   the "Campaign Keeper" folder and double-click "Campaign Keeper Setup".
   Click Install: it goes into the app menu, just for you. Use a mouse and
   keyboard.
 
 WHO NEEDS WHAT
-  Players joining a friend's game: just the app.
-  Hosts (and solo players): Claude Code with a Claude Pro or Max plan, or an
-  Anthropic API key. The app installs Claude Code for you: Settings >
-  "Set up Claude Code for me", then "Sign in to Claude Code".
+  Players joining a friend's game: the app, or just a web browser.
+  Hosts (and solo players): one of these, chosen in Settings:
+    - Claude Code with a Claude Pro or Max plan. The app installs it for
+      you: "Set up Claude Code for me", then "Sign in to Claude Code".
+    - An Anthropic API key.
+    - Antigravity with your Google account (Windows 2.2.3 and later):
+      "Set up Antigravity for me", then "Sign in to Antigravity".
+    - Other models: pick a service from the list. Free options include
+      Google Gemini, OpenRouter's free models, Mistral and GLM, or a model
+      on your own computer (Ollama, LM Studio, KoboldCpp and others).
+      DeepSeek (V4 Flash) and Xiaomi MiMo are cheap paid options.
 
 Both warnings appear because the app isn't signed with a paid developer
 certificate. They show once per computer.

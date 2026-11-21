@@ -44,7 +44,7 @@ pub struct Store {
     backup: PathBuf,
 }
 
-fn campaign_id(dir: &Path) -> Result<String, String> {
+pub fn campaign_id(dir: &Path) -> Result<String, String> {
     let p = keeper(dir).join("campaign_id");
     if let Ok(t) = std::fs::read_to_string(&p) {
         if !t.trim().is_empty() {

@@ -4,12 +4,24 @@
   let { table = $bindable(null), cfg } = $props();
   let gm = $state(false);
   let announce = $state(true);
+  let browsers = $state(true);
+
+  const link = $derived(table?.web_port ? `http://${table.address ?? "your-address"}:${table.web_port}` : "");
+
+  async function copy(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast("Copied.");
+    } catch {
+      toast("Couldn't copy. Select it and copy by hand.");
+    }
+  }
   let talk = $state("");
   let newChar = $state("");
 
   async function open() {
     try {
-      await call("table_open", { hostIsGm: gm, announce });
+      await call("table_open", { hostIsGm: gm, announce, browsers });
       table = await call("table_state");
     } catch (e) {
       toast(e);
@@ -45,6 +57,7 @@
     <label class="check"><input type="radio" name="gmrole" checked={!gm} onchange={() => (gm = false)} style="width:auto" /> <span>I'll play a character (the AI is the Game Master)</span></label>
     <label class="check"><input type="radio" name="gmrole" checked={gm} onchange={() => (gm = true)} style="width:auto" /> <span>I'll be the Game Master (I narrate and plan with the AI)</span></label>
     <label class="check"><input type="checkbox" bind:checked={announce} /> <span>Show this table on the local network. Announces the campaign and your name, never the code.</span></label>
+    <label class="check"><input type="checkbox" bind:checked={browsers} /> <span>Let friends join from a web browser, with nothing to install (iPhone, iPad, anything). That connection isn't encrypted, so use it at home or over a VPN.</span></label>
     <button class="primary" onclick={open}>👥 Open the table</button>
   </div>
 {:else}
@@ -52,8 +65,35 @@
     <div class="card">
       <div class="small muted">Join code</div>
       <div class="mono" style="font-size:20px;letter-spacing:.06em">{table.code}</div>
-      <div class="small muted">Players join with your address (port {table.port}) and this code.</div>
+      <div class="small muted">Players with the app join with your address{table.address ? ` (${table.address})` : ""} and this code.</div>
     </div>
+    {#if table.pairing}
+      <div class="card">
+        <div class="small muted">Pair a phone or another player: one paste fills in the address and the code</div>
+        <div class="mono" style="font-size:13px;overflow-wrap:anywhere">{table.pairing.text}</div>
+        <div class="row" style="margin-top:6px">
+          <button class="small" onclick={() => copy(table.pairing.text)}>Copy the invitation</button>
+          <button class="small" onclick={() => copy(`Join my Campaign Keeper game. Open Campaign Keeper, tap Join a friend's game, and paste this:\n${table.pairing.text}`)}>Copy a message</button>
+        </div>
+        <div class="small muted" style="margin-top:4px">
+          Reachable over {table.pairing.over}. On Tailscale, sign both devices in to the same account and leave this computer awake.
+          {#each table.pairing.others ?? [] as r}
+            <br />Also by {r.over}: <span class="mono">{r.host}</span>
+          {/each}
+        </div>
+      </div>
+    {/if}
+    {#if link}
+      <div class="card">
+        <div class="small muted">No app? Friends open this in any web browser, then enter the code</div>
+        <div class="mono" style="overflow-wrap:anywhere">{link}</div>
+        <div class="row" style="margin-top:6px">
+          <button class="small" onclick={() => copy(link)}>Copy the link</button>
+          <button class="small" onclick={() => copy(`Join my Campaign Keeper game: open ${link} and enter the code ${table.code}`)}>Copy an invitation</button>
+        </div>
+        <div class="small muted" style="margin-top:4px">Works for anyone on your Wi-Fi. Friends elsewhere need a VPN such as Tailscale, and your address on it instead.</div>
+      </div>
+    {/if}
     <label class="check small"><input type="checkbox" checked={table.auto_admit} onchange={(e) => call("table_auto_admit", { on: e.currentTarget.checked })} /> <span>Let people in without asking</span></label>
     {#if !table.host_is_gm}
       <label class="field"><span>Your character</span>

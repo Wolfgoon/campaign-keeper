@@ -1,0 +1,67 @@
+# Builds the Mac app and the iPhone/iPad app on GitHub's Macs, since they can't be built on Windows.
+# Run it by hand: GitHub > Actions > "Apple builds" > Run workflow. The files appear under
+# "Artifacts" on the finished run.
+#
+# The iPhone/iPad app comes out unsigned. To put it on a device it must be signed: either through
+# TestFlight (needs a paid Apple Developer account) or by the device's owner with a tool such as
+# Sideloadly or AltStore and their own Apple ID.
+name: Apple builds
+
+on:
+  workflow_dispatch:
+
+jobs:
+  mac:
+    name: Mac app (.dmg)
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - run: npm ci
+      - run: npm run tauri build -- --target universal-apple-darwin --bundles dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Campaign Keeper (Mac)
+          path: app/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+
+  ios:
+    name: iPhone and iPad app (unsigned .ipa)
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+      - run: brew install xcodegen cocoapods
+      - run: npm ci
+      - run: npm run build
+      - run: npm run tauri ios init
+      - name: Build without signing
+        working-directory: app/src-tauri/gen/apple
+        run: |
+          xcodebuild archive \
+            -project campaign-keeper.xcodeproj -scheme campaign-keeper_iOS \
+            -configuration release -sdk iphoneos -destination generic/platform=iOS \
+            -archivePath build/app.xcarchive \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+          mkdir Payload
+          cp -R build/app.xcarchive/Products/Applications/*.app Payload/
+          zip -qr "Campaign Keeper (iPhone and iPad).ipa" Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Campaign Keeper (iPhone and iPad)
+          path: app/src-tauri/gen/apple/*.ipa

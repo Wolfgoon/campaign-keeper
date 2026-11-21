@@ -14,7 +14,7 @@ use similar::{ChangeTag, TextDiff};
 use crate::campaign::{self, keeper, INSTRUCTIONS};
 use crate::chat::Entry;
 use crate::config::Config;
-use crate::engine::claude_code;
+use crate::engine::{antigravity, claude_code};
 use crate::memory::transcript;
 
 const SYSTEM: &str = include_str!("../prompts/scribe.md");
@@ -182,7 +182,8 @@ pub fn run(cfg: &Config, dir: &Path, entries: &[Entry], request: &str, include_c
     match cfg.engine.as_str() {
         "api" => run_api(cfg, dir, &prompt),
         "claude_code" => run_claude_code(cfg, dir, &prompt),
-        _ => Err("The Scribe edits files with Claude's tools, so it needs Claude Code or an Anthropic API key (Settings). The GM can still play on other models.".into()),
+        "antigravity" => run_antigravity(cfg, dir, &prompt),
+        _ => Err("The Scribe edits files with tools, so it needs Claude Code, Antigravity, or an Anthropic API key (Settings). The GM can still play on other models.".into()),
     }
 }
 
@@ -284,6 +285,89 @@ fn run_claude_code(cfg: &Config, dir: &Path, prompt: &str) -> Result<Outcome, St
     }
     let _ = std::fs::remove_dir_all(&work);
     Ok(Outcome { summary: String::from_utf8_lossy(&out.stdout).trim().to_string(), proposals: proposals(dir, &edits) })
+}
+
+/// Antigravity edits a private copy with its own tools; the differences become the proposals.
+fn run_antigravity(cfg: &Config, dir: &Path, prompt: &str) -> Result<Outcome, String> {
+    let exe = antigravity::find(cfg).ok_or("Antigravity wasn't found on this computer.")?;
+    let work: PathBuf = keeper(dir).join("scribe-work");
+    let _ = std::fs::remove_dir_all(&work);
+    for f in campaign::files(dir) {
+        let to = work.join(&f);
+        std::fs::create_dir_all(to.parent().unwrap_or(&work)).map_err(|e| e.to_string())?;
+        std::fs::copy(dir.join(&f), &to).map_err(|e| e.to_string())?;
+    }
+    let extra = "\n\n- The campaign folder is your current directory. Read a file before you edit it.\n- Only edit or create markdown files inside the campaign folders.";
+    let full = format!(
+        "<system>\n{SYSTEM}{extra}\n</system>\n\nThe campaign files are in the current directory. README.md explains the layout, and the _TEMPLATE.md files are the blank forms for new entries.\n\n{prompt}"
+    );
+    let payload = antigravity::input_line(&full);
+    let mut cmd = claude_code::command(&exe);
+    cmd.args([
+        "--print=",
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--disable-slash-commands",
+        "--mode",
+        "accept-edits",
+        "--dangerously-skip-permissions",
+    ]);
+    if !cfg.agy_model.trim().is_empty() && cfg.agy_model.trim() != "auto" {
+        cmd.args(["--model", cfg.agy_model.trim()]);
+    }
+    claude_code::no_window(&mut cmd);
+    let mut child = cmd
+        .current_dir(&work)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Could not start Antigravity: {e}"))?;
+    child.stdin.take().ok_or("no stdin")?.write_all(payload.as_bytes()).map_err(|e| e.to_string())?;
+    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    let mut summary = String::new();
+    let mut err: Option<String> = None;
+    for line in String::from_utf8_lossy(&out.stdout).lines() {
+        let Ok(v) = serde_json::from_str::<Value>(line) else { continue };
+        match v["event"].as_str().unwrap_or("") {
+            "step_update" if v["step_update"]["step_type"] == "agent_response" => {
+                if let Some(t) = v["step_update"]["text_delta"].as_str() {
+                    summary.push_str(t);
+                }
+            }
+            "result" => {
+                let r = &v["result"];
+                if r["status"] == "ERROR" {
+                    err = Some(r["error"].as_str().unwrap_or("The Scribe stopped unexpectedly.").to_string());
+                } else if summary.is_empty() {
+                    if let Some(t) = r["response"].as_str() {
+                        summary = t.to_string();
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    if let Some(e) = err {
+        let _ = std::fs::remove_dir_all(&work);
+        return Err(e);
+    }
+    if !out.status.success() && summary.trim().is_empty() {
+        let _ = std::fs::remove_dir_all(&work);
+        return Err("The Scribe stopped unexpectedly.".to_string());
+    }
+    let mut edits = BTreeMap::new();
+    for f in campaign::files(&work) {
+        if allowed(&f).is_ok() {
+            if let Ok(t) = std::fs::read_to_string(work.join(&f)) {
+                edits.insert(f, t);
+            }
+        }
+    }
+    let _ = std::fs::remove_dir_all(&work);
+    Ok(Outcome { summary: summary.trim().to_string(), proposals: proposals(dir, &edits) })
 }
 
 /// Write the approved files. Returns the backup folder, for "Restore".
