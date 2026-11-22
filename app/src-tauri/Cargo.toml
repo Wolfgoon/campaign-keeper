@@ -1,6 +1,6 @@
 [package]
 name = "campaign-keeper"
-version = "3.0.6"
+version = "3.0.7"
 edition = "2021"
 description = "Play tabletop-style campaigns with Claude as your Game Master"
 

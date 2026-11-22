@@ -74,8 +74,11 @@ STATUS WINDOW
   class, the four base stats HP, STR, INT, DEX, the derived stats,
   spectrums with amplitude, skills, paths open, feats. It is the truth.
   Never contradict it, never state a different number.
-- The derived stats are enormous by design (amplitude at INT 10 is
-  10^100). Say them as the window does.
+- Amplitude is capacity, not damage: ten times INT squared, so 1,000 at
+  INT 10 and a few thousand at level 30. That is ten full 100-amplitude
+  casts from a full frequency; a full one refills in about ten minutes
+  of quiet, five resting. Speed and stamina run to enormous numbers by
+  design. Say them as the window does.
 
 THE FIXED RULES (the app enforces them; know them to judge well)
 - Levels: experience for the next level x is

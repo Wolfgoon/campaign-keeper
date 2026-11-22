@@ -10,8 +10,8 @@
 //!   Defeats     a = 0.05 * 100 * ((sqrt(b) + 10) / sqrt(b)) ^ (0.6 * sqrt(b)), b = the enemy's level, times the
 //!               difference multiplier.
 //!   Base stats  HP, STR, INT, DEX; they rise a set amount per level (species growth + class growth).
-//!   Derived     amplitude = INT ^ 100 (the most each frequency can hold), speed = DEX ^ STR * 0.01,
-//!               stamina = STR ^ HP * 0.1, plus whatever a class or species adds.
+//!   Derived     amplitude = INT * INT * 10 (the most each frequency can hold; 1,000 at INT 10),
+//!               speed = DEX ^ STR * 0.01, stamina = STR ^ HP * 0.1, plus whatever a class or species adds.
 //!   Class       null, common, uncommon, rare, epic, legendary, mythical; next tier at level 5 ^ b.
 //!   Species     base, adapted, heroic, cataclysmic; next tier at level 25 ^ d. Each species upgrade opens a frequency.
 //!   Skill tiers unskilled, skilled, trained, experienced, expert, founder, unique; next at skill level 5 ^ tier.
@@ -47,7 +47,11 @@ pub const MAX_LEVEL: u32 = 15625;
 pub const CLASS_TIERS: [&str; 7] = ["null", "common", "uncommon", "rare", "epic", "legendary", "mythical"];
 pub const SPECIES_TIERS: [&str; 4] = ["base", "adapted", "heroic", "cataclysmic"];
 pub const SKILL_TIERS: [&str; 7] = ["unskilled", "skilled", "trained", "experienced", "expert", "founder", "unique"];
-const DERIVED: [(&str, &str); 3] = [("amplitude", "int ^ 100"), ("speed", "dex ^ str * 0.01"), ("stamina", "str ^ hp * 0.1")];
+/// The derived stats. Amplitude was INT ^ 100 in his file, which is 10^100 at INT 10: too far out to be
+/// a resource (no session could ever empty it, and semi skill power is only log10 of it). Balanced to ten
+/// times INT squared — 1,000 at INT 10, ten full 100-amplitude casts — which keeps the creature rule's
+/// ten-per-point feel (a wolf in the wild has its level x 10) and gives the regen a pace you can feel.
+const DERIVED: [(&str, &str); 3] = [("amplitude", "int ^ 2 * 10"), ("speed", "dex ^ str * 0.01"), ("stamina", "str ^ hp * 0.1")];
 const DEFAULT_GROWTH: [(&str, i64); 4] = [("HP", 2), ("STR", 1), ("INT", 1), ("DEX", 1)];
 pub const BP_COST: [(&str, u64); 5] = [("skill_tier", 100), ("class_tier", 5000), ("species_tier", 10000), ("class_skill", 500), ("racial_skill", 1000)];
 pub const REVIVAL_SHARE: f64 = 0.25;
@@ -712,10 +716,14 @@ impl Prism {
     pub fn blocked(&self, place: i32) -> bool {
         self.dec(place) >= rat(1)
     }
+    /// Fill a frequency that has never been used to its maximum, and never leave one holding more than
+    /// it can: a save from before the amplitude was balanced can hold 10^100 where 1,000 is now the
+    /// most, and the cap is the truth (overuse is the one thing that lowers it, and `top` knows that).
     pub fn fill(&mut self, maximum: &BigInt) {
         for p in self.held.clone() {
-            if !self.amplitude.contains_key(&p) {
-                let t = self.top(p, maximum);
+            let t = self.top(p, maximum);
+            let over = self.amplitude.get(&p).is_some_and(|b| b.0 > BigRational::from_integer(t.clone()));
+            if over || !self.amplitude.contains_key(&p) {
                 self.amplitude.insert(p, Big::int(t));
             }
         }
@@ -2846,13 +2854,36 @@ mod tests {
     }
 
     #[test]
-    fn amplitude_is_int_to_the_hundredth_exactly() {
+    fn amplitude_is_ten_times_int_squared_exactly() {
         let w = world_with("Wren");
         let s = &w.sheets["Wren"];
-        assert_eq!(s.amplitude_max(&w.defs), pow10(100));
+        // INT 10: ten full 100-amplitude casts, not 10^100
+        assert_eq!(s.amplitude_max(&w.defs), BigInt::from(1000));
+        assert_eq!(short_int(&BigInt::from(1000)), "1000");
+        // the short form still carries any size it is handed
         assert_eq!(short_int(&pow10(100)), "1.00e100");
         assert_eq!(short(&rat(438)), "438");
         assert_eq!(short(&ratio(1, 3)), "0.3333");
+    }
+
+    #[test]
+    fn a_save_holding_more_than_the_maximum_is_brought_down_to_it() {
+        let w = world_with("Wren");
+        let mut prism = w.sheets["Wren"].prism.clone();
+        // a level 1 sheet from 3.0.6, holding INT ^ 100 per frequency
+        let held = prism.held.clone();
+        for p in &held {
+            prism.amplitude.insert(*p, Big::int(pow10(100)));
+        }
+        let top = w.sheets["Wren"].amplitude_max(&w.defs);
+        prism.fill(&top);
+        for p in &held {
+            assert_eq!(prism.have(*p), rat(1000), "{}", freq(*p).name);
+        }
+        // and one below the cap keeps what it has: fill is not a refill
+        prism.spend(held[0], &rat(600), &top).unwrap();
+        prism.fill(&top);
+        assert_eq!(prism.have(held[0]), rat(400));
     }
 
     #[test]
@@ -2890,9 +2921,10 @@ mod tests {
     fn regen_is_one_a_minute_at_int_one() {
         // item 54: a level 0 character with 1 INT gathers 1 a minute
         assert_eq!(rate(1, &BigInt::one(), false), BigInt::one());
-        // INT 10: INT^2 x (10^100)^(1/20) = 100 x 10^5
-        assert_eq!(rate(10, &pow10(100), false), BigInt::from(10_000_000));
-        assert_eq!(rate(10, &pow10(100), true), BigInt::from(20_000_000));
+        // INT 10 holding 1,000: INT^2 x 1000^(1/20) = 100 x 1 a minute, so a full frequency is ten
+        // minutes of quiet and five of sleep -- a pace, not a lifetime
+        assert_eq!(rate(10, &BigInt::from(1000), false), BigInt::from(100));
+        assert_eq!(rate(10, &BigInt::from(1000), true), BigInt::from(200));
     }
 
     #[test]
@@ -2923,7 +2955,7 @@ mod tests {
         let out = s.spend(5, &(top.clone() * ratio(3, 2)), &d).unwrap();
         assert!((out.decrease_percent - 50.0).abs() < 1e-6);
         assert!(s.pain >= OVERUSE_PAIN_MIN);
-        assert_eq!(s.prism.top(5, &s.amplitude_max(&d)), pow10(100) / 2);
+        assert_eq!(s.prism.top(5, &s.amplitude_max(&d)), BigInt::from(500));
         // overused past its whole maximum, it no longer answers
         s.spend(5, &top, &d).unwrap();
         assert!(s.prism.blocked(5));

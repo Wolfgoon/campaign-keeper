@@ -1,7 +1,7 @@
-# Handoff: Campaign Keeper 3.0.6 (Windows; AI Game Master, AD System, serverless multiplayer)
+# Handoff: Campaign Keeper 3.0.7 (Windows; AI Game Master, AD System, serverless multiplayer)
 
 Repo: `C:\Users\patri\OneDrive\Documents\GitHub\campaign-keeper` (Tauri 2 + Svelte 5 + Rust). Windows, PowerShell.
-Everything described here is committed and pushed to `main` (latest version: 3.0.6, Windows exe only — the
+Everything described here is committed and pushed to `main` (latest version: 3.0.7, Windows exe only — the
 Android APK is still 3.0.2). Start with **Still to do** at the bottom of the version sections.
 
 ## What was done
@@ -149,8 +149,8 @@ older commits from P-Hoep (`ea9a3fc`, `878ca4c`, `4b1d5dc` "deepseeks"), so it w
    (species, or at creation on a level 1 sheet), so give the test character experience first. The lines
    work in `ad::tests` and `game::tests`; the live table has only seen up to the 3.0.3 build, where the
    define was refused.
-6. Optional: the tracked `installers/*3.0.4*` and `*3.0.5*` files are superseded by 3.0.6 and can be
-   deleted in a commit of their own.
+6. Optional: the tracked `installers/*3.0.4*`, `*3.0.5*` and `*3.0.6*` files are superseded by 3.0.7 and can
+   be deleted in a commit of their own.
 
 ## Android build command (for next time)
 ```
@@ -437,5 +437,52 @@ System already uses, with creation still free for species.
   `dist/` rebuilt unchanged (`index-C1R1GU3f.js`, no UI change). `README.md`'s download table and
   `How to install.txt` point at the 3.0.6 file; 3.0.4 and 3.0.5 stay in `installers/` for anyone who has them.
 - **Android is still 3.0.2** and has none of the 3.0.3/3.0.4/3.0.5/3.0.6 fixes.
+
+## Fix after 3.0.6: amplitude you could never spend (2026-11-21)
+
+The owner's words: "BALANCE THE AMPLITUDE A BIT YOU GET LIKE 10e100". The panel was honest — the rules that
+were ported say `amplitude = INT ^ 100`, so INT 10 really did hold 10^100 in every frequency. Nothing in a
+campaign can spend 10^100, and semi skill power is only `base x log10(1 + amplitude) / 2`, so the tank read
+as infinity and every cast was a rounding error.
+
+- **`DERIVED` amplitude is now `int ^ 2 * 10`** — ten times INT squared: **1,000 at INT 10**, 9,000 at INT
+  30, 100,000 at INT 100. The shape is kept (capacity grows with the square of INT, so INT is still the stat
+  that decides how much a frequency can hold) and the scale is the creature rule's own ten-per-point (a
+  creature with no prism holds its level x 10, `CREATURE_AMPLITUDE_PER_LEVEL`).
+- Why that number: the prompt already tells the GM a semi skill needs **amplitude in the 100s** to be worth
+  anything. 1,000 is ten full 100-amplitude casts from a full frequency — a resource with a floor and a
+  rhythm — and it keeps the shapes the tests already pin: 300 amplitude still overpowers a level 3 wolf (its
+  30 remaining x 10) on a level 1 character's INT.
+- **Regen has a pace now**: `rate` is untouched (his rule: `INT^2 x maximum^(1/20)`), so a full 1,000 costs
+  about ten minutes of quiet, five resting, and one 100-amplitude cast is a minute's walk. Before, filling
+  10^100 at ~10^7 a minute was 10^93 minutes, i.e. never.
+- **Old saves are brought down, not left broken**: `Prism::fill` now clamps as well as fills — any frequency
+  holding more than its top is set to the top (and `top` already accounts for overuse, the only thing that
+  lowers it). `fill` is called by `spend`, `regen`, `remaining` and `sheet_view`, so a 3.0.6 save reading
+  `1.00e100/1.00e100` shows `1000/1000` on the first look, with nothing edited by hand. A frequency below
+  the top is left alone: fill is not a refill.
+- **Prompt** (`litrpg_ad.md`): "the derived stats are enormous by design (amplitude at INT 10 is 10^100)"
+  became "amplitude is capacity, not damage: ten times INT squared, so 1,000 at INT 10 and a few thousand at
+  level 30 … a full one refills in about ten minutes of quiet, five resting", with speed and stamina still
+  called enormous by design. `prompt::PROMPT_VERSION` is 7 (it was 6 in 3.0.6), so running chats rebuild the
+  GM's instructions next turn and stop quoting 10^100.
+- **Tests.** `amplitude_is_int_to_the_hundredth_exactly` became `amplitude_is_ten_times_int_squared_exactly`
+  (1,000 at INT 10; the `short()` check for `1.00e100` stays, because the short form still has to carry any
+  size); the regen test now expects 100 a minute from 1,000; the overuse test reads its half-maximum as 500;
+  and new `a_save_holding_more_than_the_maximum_is_brought_down_to_it` puts 10^100 in every frequency, fills,
+  finds 1,000, spends 600 and checks the 400 left survives a second fill. `cargo test --lib`:
+  **165 passed, 0 failed, 2 ignored**.
+- **Shipped for Windows as 3.0.7** (2026-11-21), exe only. Bumped to 3.0.7 in `app/package.json`,
+  `app/src-tauri/Cargo.toml`, `app/src-tauri/Cargo.lock` and `app/src-tauri/tauri.conf.json`;
+  `cd app; npm run tauri build` gave `installers/Campaign Keeper Setup 3.0.7.exe` — 7,329,358 bytes,
+  ProductVersion and FileVersion 3.0.7, SHA-256
+  `15e80536bf36740cf195f24386b39edb2c9bda161e393e05f5ef198fa5bf5e44`, copied from
+  `app/src-tauri/target/release/bundle/nsis/Campaign Keeper_3.0.7_x64-setup.exe`. The app exe carries the
+  new formula and prompt (`int ^ 2 * 10`, `Amplitude is capacity, not damage`) beside the 3.0.6 gates.
+  `README.md`'s download table and `How to install.txt` point at the 3.0.7 file.
+- **Speed and stamina are still enormous** (`dex ^ str * 0.01` is 10^8 at DEX 10, STR 10; stamina
+  `str ^ hp * 0.1` is 10^9). They are display-only — nothing in the System spends or checks them — so they
+  were left as ported. Same one-line change in `DERIVED` if the owner wants them on the same footing.
+- **Android is still 3.0.2** and has none of the 3.0.3–3.0.7 fixes.
 
 
