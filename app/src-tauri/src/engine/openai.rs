@@ -55,6 +55,26 @@ fn call(cfg: &Config, body: Value) -> Result<ureq::Response, String> {
     }
 }
 
+/// One request, one whole reply. The Scribe needs tool calls, which the streaming path drops.
+pub fn chat(cfg: &Config, body: Value) -> Result<Value, String> {
+    let resp = match call(cfg, body.clone()) {
+        // Some services cap or refuse max_tokens or tool_choice: try again with only the basics.
+        Err(e) if e.starts_with("The service reported an error (400") || e.starts_with("The service reported an error (422") => {
+            let mut again = body;
+            if let Some(o) = again.as_object_mut() {
+                o.remove("max_tokens");
+                o.remove("tool_choice");
+            }
+            match call(cfg, again) {
+                Ok(r) => r,
+                Err(e2) => return Err(if e2 == e { e2 } else { format!("{e2}\n(First try: {e})") }),
+            }
+        }
+        r => r?,
+    };
+    resp.into_json().map_err(|e| format!("The service's reply wasn't JSON: {e}"))
+}
+
 pub fn stream(cfg: &Config, req: &Request, on_delta: &mut dyn FnMut(&str), cancel: &AtomicBool) -> Result<Reply, String> {
     if cfg.other_model.trim().is_empty() {
         return Err("Choose a model in Settings (Other models).".into());
@@ -121,7 +141,7 @@ pub fn once(cfg: &Config, model: &str, system: &str, user: &str) -> Result<Strin
 }
 
 pub fn list_models(cfg: &Config) -> Result<Vec<String>, String> {
-    let mut r = ureq::get(&url(cfg, "/models")?).timeout(Duration::from_secs(20));
+    let mut r = ureq::get(&url(cfg, "/models")?).timeout(Duration::from_secs(60));
     if let Some(k) = key(cfg) {
         r = r.set("authorization", &format!("Bearer {k}"));
     }

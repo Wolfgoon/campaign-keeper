@@ -94,7 +94,7 @@
   <div class="editor">
     {#if path}
       <div class="row" style="padding:6px 12px;border-bottom:1px solid var(--line)">
-        <b class="grow small">{path}{dirty ? " • unsaved" : ""}</b>
+        <b class="grow small path">{path}{dirty ? " • unsaved" : ""}</b>
         <button onclick={() => (editing = !editing)}>{editing ? "👁 Read" : "✏ Edit"}</button>
         <button class="primary" disabled={!dirty} onclick={save}>Save</button>
         <button disabled={!dirty} onclick={() => (text = disk)}>Revert</button>

@@ -36,7 +36,14 @@
   // On a narrow screen the side panel is a full-screen sheet, opened from the composer.
   let sideOpen = $state(false);
 
-  const MODES = [["do", "> Do"], ["say", '" Say'], ["story", "~ Story"]];
+  const MODES = [["do", "> Do"], ["say", '" Say'], ["story", "~ Story"], ["ooc", "? OOC"]];
+  // Out of character: the GM answers plainly and the story stays exactly where it was. These fill
+  // the box rather than send, so nothing goes that the player hasn't read.
+  const OOC_ASKS = [
+    ["✔ Confirm", "Confirm what's true right now, out of character: what has definitely happened, what we know for certain, and what is still unclear. Don't continue the story."],
+    ["🔍 More detail", "More detail, please, out of character: what's in front of me, what I can see, hear, smell and touch, who is here and what they are doing, and anything I could use. Be concrete and specific, and keep it consistent with what is already written."],
+    ["🧷 No retcons", "Out of character: check this chat and the campaign files for anything that contradicts what we have already established. Nothing that has happened may be changed, softened or rewritten. If something is wrong, tell me plainly instead of narrating it away."],
+  ];
   const hasSave = $derived(!!info.saves);
 
   function nearBottom() {
@@ -62,6 +69,8 @@
   }
 
   function onNewReply(e: any) {
+    // An answer to an out-of-character question is not story: nothing to score, nothing to read out.
+    if (e.ooc) return;
     music.apply(e);
     if (cfg.tts_auto) speakEntry(e.text, e.voices, cfg.tts_speed);
   }
@@ -78,7 +87,8 @@
   function compose() {
     const t = input.trim();
     if (!t) return "";
-    if (t.startsWith("/") || t.startsWith(">") || t.startsWith('"') || t.startsWith("~")) return t;
+    if (t.startsWith("/") || t.startsWith(">") || t.startsWith('"') || t.startsWith("~") || t.startsWith("?")) return t;
+    if (mode === "ooc") return `? ${t}`;
     if (mode === "say") return `"${t}"`;
     if (mode === "story") return `~ ${t}`;
     return `> ${t}`;
@@ -89,9 +99,12 @@
     if (!body) return;
     if (text === undefined) input = "";
     stopSpeaking();
+    // A question asked out of character goes to the GM alone: it isn't a move at the table, so it
+    // never joins the round.
+    const ooc = body.startsWith("?") || body.startsWith("/ooc");
     try {
       if (gmChat) await call("send_text", { text: body, private: true });
-      else if (table && !body.startsWith("/")) {
+      else if (table && !ooc && !body.startsWith("/")) {
         await call("table_host_action", { text: body, gmNarration: table.host_is_gm });
         toast("Locked in. Waiting for the table.");
       } else await call("send_text", { text: body, label });
@@ -210,7 +223,10 @@
       <div class="composer-inner">
         <div class="row modes" role="group" aria-label="Input mode">
           {#each MODES as [id, name]}
-            <button class:on={mode === id} onclick={() => (mode = id)}>{name}</button>
+            <button
+              class:on={mode === id}
+              title={id === "ooc" ? "Ask out of character: confirm what's true, ask for more detail, or say what may not change" : undefined}
+              onclick={() => (mode = id)}>{name}</button>
           {/each}
           <span class="grow"></span>
           {#if table?.host_is_gm}<label class="row small"><input type="checkbox" bind:checked={gmChat} /> 🔒 GM chat</label>{/if}
@@ -224,6 +240,14 @@
           <button class="small narrow-only" onclick={() => { sideOpen = true; loadSide(); }}>☰ Status, map, music…</button>
           {#if busy}<button class="small danger" onclick={() => call("stop_turn")}>⏹ Stop</button>{/if}
         </div>
+        {#if mode === "ooc"}
+          <div class="row" role="group" aria-label="Out-of-character asks">
+            <span class="small muted">Out of character:</span>
+            {#each OOC_ASKS as [name, ask]}
+              <button class="small" title={ask} onclick={() => (input = ask)}>{name}</button>
+            {/each}
+          </div>
+        {/if}
         {#if waitingOnYou}
           <div class="row small" role="status">
             <span class="grow" style="color:var(--gold)">Everyone else is ready. The round is waiting for you.</span>
@@ -231,7 +255,7 @@
           </div>
         {/if}
         <div class="send-row">
-          <textarea rows="2" bind:value={input} onkeydown={keydown} placeholder={'What do you do?   > act   "speak"   ~ narrate   /help'} aria-label="Your action"></textarea>
+          <textarea rows="2" bind:value={input} onkeydown={keydown} placeholder={mode === "ooc" ? "Ask out of character: confirm, more detail, no retcons" : 'What do you do?   > act   "speak"   ~ narrate   ? ask   /help'} aria-label="Your action"></textarea>
           <button class="primary narrow-only" disabled={!input.trim()} onclick={() => send()}>Send</button>
         </div>
         <div class="row small muted">

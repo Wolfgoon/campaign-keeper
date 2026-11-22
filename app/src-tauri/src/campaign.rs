@@ -109,6 +109,54 @@ pub fn latest_save(dir: &Path) -> Option<String> {
     saves.pop()
 }
 
+/// A campaign sitting in a folder of campaigns. A phone keeps every story in one place, so this
+/// is how one is found again when there is no folder to browse and no list of recents.
+#[derive(Serialize, Clone)]
+pub struct Found {
+    pub path: String,
+    pub name: String,
+    /// Unix seconds: the newest sign of life (the chat, a save, or the folder itself).
+    pub modified: u64,
+    pub saves: usize,
+}
+
+fn stamp(p: &Path) -> u64 {
+    std::fs::metadata(p)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn last_played(dir: &Path) -> u64 {
+    let mut newest = stamp(dir).max(stamp(&keeper(dir).join("chat.json")));
+    if let Ok(rd) = std::fs::read_dir(dir.join("08_Saves")) {
+        for e in rd.flatten() {
+            newest = newest.max(stamp(&e.path()));
+        }
+    }
+    newest
+}
+
+/// Every campaign in a folder of campaigns, the most recently played first.
+pub fn find(root: &Path) -> Vec<Found> {
+    let Ok(rd) = std::fs::read_dir(root) else { return Vec::new() };
+    let mut out: Vec<Found> = rd
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_dir() && !p.file_name().map(|n| n.to_string_lossy().starts_with('.')).unwrap_or(false) && is_campaign(p))
+        .map(|p| Found {
+            name: name(&p),
+            path: p.display().to_string(),
+            modified: last_played(&p),
+            saves: files(&p).iter().filter(|f| f.starts_with("08_Saves/") && !is_blank_form(f)).count(),
+        })
+        .collect();
+    out.sort_by(|a, b| b.modified.cmp(&a.modified).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+    out
+}
+
 pub fn store_save(dir: &Path, block: &str) -> Result<String, String> {
     let date = chrono::Local::now().format("%Y-%m-%d").to_string();
     let n = (1..100).find(|n| !dir.join(format!("08_Saves/{date}_save_{n:02}.md")).exists()).unwrap_or(99);
@@ -235,5 +283,28 @@ pub fn overview(dir: &Path) -> Overview {
         latest_save: latest_save(dir),
         last_session: all.iter().filter(|f| f.starts_with("06_Sessions/") && !is_blank_form(f)).next_back().cloned(),
         file_tokens: game_files(dir).values().map(|t| crate::util::tokens(t)).sum(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_folder_of_campaigns_lists_what_is_there() {
+        let root = std::env::temp_dir().join(format!("ck-find-{}", uuid::Uuid::new_v4()));
+        let (dawn, dusk) = (root.join("Dawn"), root.join("Dusk"));
+        create(&dawn, "Dawn").unwrap();
+        create(&dusk, "Dusk").unwrap();
+        std::fs::create_dir_all(root.join("not a campaign")).unwrap();
+        atomic_write(&dusk.join("08_Saves/2026-01-01_save_01.md"), b"x").unwrap();
+        let found = find(&root);
+        // The folder that isn't a campaign is left out; the blank save template isn't counted.
+        assert_eq!(found.len(), 2);
+        assert!(found.iter().all(|c| c.name != "not a campaign"));
+        let saves = |n: &str| found.iter().find(|c| c.name == n).map(|c| c.saves).unwrap_or(99);
+        assert_eq!((saves("Dusk"), saves("Dawn")), (1, 0));
+        assert!(found[0].modified >= found[1].modified);
+        std::fs::remove_dir_all(&root).ok();
     }
 }

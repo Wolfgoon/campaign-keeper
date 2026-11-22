@@ -384,11 +384,18 @@ fn run_turn(app: &AppHandle, st: &Shared, p: &Pending) -> Result<(), String> {
     let parsed = tags::parse(&reply.text);
     // Painting is slow, so it happens before the state is locked.
     let painted = paint_pictures(app, st, &cfg, &parsed);
+    // An out-of-character answer is talk about the game, not a turn in it: nothing it says may
+    // change a sheet, open an activity, store a save or teach the memory anything.
+    let ooc = is_ooc(&p.text);
     let mut s = st.lock().map_err(|_| "state lost")?;
     let mut entry = Entry::text("assistant", &reply.text);
     entry.usage = Some(reply.usage.clone());
     entry.model = Some(reply.model.clone());
     entry.display = Some(parsed.display.clone());
+    if ooc {
+        // The answer to a question asked out of character: the page shows it as a note, not story.
+        entry.extra.insert("ooc".into(), json!(true));
+    }
     if p.private {
         entry.extra.insert("private".into(), json!(true));
     }
@@ -405,18 +412,20 @@ fn run_turn(app: &AppHandle, st: &Shared, p: &Pending) -> Result<(), String> {
             s.session.rpg_notices.push(format!("A picture failed, so the player didn't see it: {e}"));
         }
     }
-    if let Some(a) = &parsed.activity {
-        s.session.activity_seq += 1;
-        let mut a = a.clone();
-        a["id"] = json!(s.session.activity_seq);
-        s.session.activities.push(a);
-    }
-    if let Some(block) = &parsed.save_block {
-        if let Ok(f) = campaign::store_save(&dir, block) {
-            entry.extra.insert("saved_as".into(), json!(f));
+    if !ooc {
+        if let Some(a) = &parsed.activity {
+            s.session.activity_seq += 1;
+            let mut a = a.clone();
+            a["id"] = json!(s.session.activity_seq);
+            s.session.activities.push(a);
         }
+        if let Some(block) = &parsed.save_block {
+            if let Ok(f) = campaign::store_save(&dir, block) {
+                entry.extra.insert("saved_as".into(), json!(f));
+            }
+        }
+        apply_rpg(&dir, &mut s, &parsed, &mut entry, &p.actions)?;
     }
-    apply_rpg(&dir, &mut s, &parsed, &mut entry, &p.actions)?;
     if reply.truncated {
         note(app, "Cut off: this reply hit the output limit (see Settings).");
     }
@@ -436,16 +445,39 @@ fn run_turn(app: &AppHandle, st: &Shared, p: &Pending) -> Result<(), String> {
     drop(s);
 
     emit(app, "entry", json!({ "seconds": t0.elapsed().as_secs_f32() }));
-    if cfg.memory_enabled && !p.private {
+    if cfg.memory_enabled && !p.private && !ooc {
         after_turn(app, st, &cfg, &dir, player, parsed.display, last_user_idx);
     }
     Ok(())
 }
 
+/// A message that begins with "?" steps out of the story: the GM answers plainly and the world
+/// stays exactly where it was. `/ooc` does the same, for anyone who prefers typing a word.
+fn is_ooc(text: &str) -> bool {
+    let t = text.trim_start();
+    t.starts_with('?') || t == "/ooc" || t.starts_with("/ooc ") || t.starts_with("/ooc\n")
+}
+
+/// Travels with an out-of-character message: what the GM owes the player, and what it may not
+/// touch. The instructions say the same, but this arrives on the turn itself, where it counts.
+const OOC_BLOCK: &str = "<out_of_character>
+The player stepped out of the story: this is a question or a confirmation, not an action. Answer
+plainly as the GM: no narration, no character dialogue, no time passing, no new events, no checks,
+and no maps, music or pictures. What has already happened in this chat is canon even where it
+disagrees with the files: never change, soften or rewrite it, and never claim it was really
+something else all along. If two things contradict each other, name both, then let the player
+decide which stands. For a confirmation, say what is definitely true, then what is uncertain,
+then what nobody knows yet. For more detail, be concrete and specific: sizes, distances, colours,
+sounds, smells, textures, names, what can be used. When the player next acts without a \"?\", the
+story resumes exactly where it stood.
+</out_of_character>";
+
 /// Recall, referee, rules, and the player's message with what they produced.
 fn compose_user_turn(app: &AppHandle, st: &Shared, p: &Pending, cfg: &Config, dir: &Path, update: String) -> Result<(), String> {
-    let is_command = p.text.trim_start().starts_with('/') || p.private;
     let is_story = p.text.trim_start().starts_with('~');
+    let is_ooc = is_ooc(&p.text);
+    // An out-of-character question still benefits from the memory: it often asks what's true.
+    let is_command = (!is_ooc && p.text.trim_start().starts_with('/')) || p.private;
     let (session_snapshot, rules_snapshot) = {
         let s = st.lock().map_err(|_| "state lost")?;
         (s.session.clone(), s.rules.clone())
@@ -479,7 +511,7 @@ fn compose_user_turn(app: &AppHandle, st: &Shared, p: &Pending, cfg: &Config, di
     // Starting or resuming a game is setup, not an attempt.
     let setup = p.label.as_deref().is_some_and(|l| l != "Round");
     // The AD System has no checks: the System judges deeds and the rules check its changes.
-    if rules.enabled && !rules.is_ad() && !rules.sheets.is_empty() && !is_command && !is_story && !setup {
+    if rules.enabled && !rules.is_ad() && !rules.sheets.is_empty() && !is_command && !is_story && !setup && !is_ooc {
         set_status(app, st, "The referee is weighing it…");
         let actions: Vec<(String, String)> = p.actions.iter().map(|(c, t)| {
             let who = if c.is_empty() { rules.sheets.keys().next().cloned().unwrap_or_default() } else { c.clone() };
@@ -506,14 +538,17 @@ fn compose_user_turn(app: &AppHandle, st: &Shared, p: &Pending, cfg: &Config, di
     for e in errors {
         note(app, &format!("Check skipped: {e}"));
     }
-    if s.rules.enabled && s.rules.has_sheets() {
+    if s.rules.enabled && s.rules.has_sheets() && !is_ooc {
         blocks.push(format!("<status_window>\n{}\n</status_window>", s.rules.status_all()));
     }
     // The rules came on after the story had begun: the words on the sheet were never fitted to this
     // world, so the GM must ask the table what to call them before it uses them.
-    if s.rules.enabled && s.rules.terms_pending {
+    if s.rules.enabled && s.rules.terms_pending && !is_ooc {
         let ask = if s.rules.is_ad() { crate::ad::TERMS_ASK } else { rpg::TERMS_ASK };
         blocks.push(format!("<world_words>\n{ask}\n</world_words>"));
+    }
+    if is_ooc {
+        blocks.push(OOC_BLOCK.to_string());
     }
     if !s.session.rpg_notices.is_empty() {
         blocks.push(format!("<rpg_notice>\n{}\n</rpg_notice>", s.session.rpg_notices.join("\n")));
@@ -532,6 +567,9 @@ fn compose_user_turn(app: &AppHandle, st: &Shared, p: &Pending, cfg: &Config, di
     entry.display = Some(p.text.clone());
     entry.label = p.label.clone();
     entry.recalled = recalled;
+    if is_ooc {
+        entry.extra.insert("ooc".into(), json!(true));
+    }
     if p.private {
         entry.extra.insert("private".into(), json!(true));
     }
@@ -1023,5 +1061,23 @@ mod tests {
         apply_rpg(&d, &mut s, &parsed, &mut e, &[("Bram".into(), "I tune the wolf's frequency".into())]).unwrap();
         assert!(s.rules.ad.sheets["Bram"].level > 1, "Bram didn't level");
         assert_eq!(s.rules.ad.sheets["Aria"].level, 1, "Aria was never touched");
+    }
+
+    #[test]
+    fn a_leading_question_mark_asks_out_of_character() {
+        assert!(is_ooc("? what do I know about the log?"));
+        assert!(is_ooc("   ?"));
+        assert!(is_ooc("/ooc can I check the map"));
+        assert!(!is_ooc("> I look around"));
+        assert!(!is_ooc("do I know the log?"));
+        assert!(!is_ooc("/oocc"));
+    }
+
+    #[test]
+    fn an_out_of_character_answer_leaves_the_story_alone() {
+        // This block rides on the question itself, so it has to say the whole of it.
+        for must in ["no narration", "no checks", "never change", "is canon", "resumes exactly"] {
+            assert!(OOC_BLOCK.contains(must), "the block no longer says: {must}");
+        }
     }
 }

@@ -3,19 +3,20 @@ Campaign Keeper: how to install
 PLAYING TOGETHER: everyone at a table needs version 3.0 or later (or a
 web browser). An older app is told to update when it tries to join.
 
-ON WINDOWS: "Campaign Keeper Setup 3.0.7.exe"
+ON WINDOWS: "Campaign Keeper Setup 3.1.2.exe"
   Double-click it. If Windows says "Windows protected your PC", click
   "More info", then "Run anyway". Click Install: it installs just for you
   (no administrator needed), adds Start menu and desktop shortcuts, and
   can be removed in Settings > Apps. When Windows Firewall asks, allow
   Campaign Keeper on private networks so friends can join your games.
 
-ON AN ANDROID PHONE OR TABLET: "Campaign Keeper 3.0.2 (Android).apk"
+ON AN ANDROID PHONE OR TABLET: "Campaign Keeper 3.1.2 (Android).apk"
   Open the file on the device. Android asks whether to allow installing
   apps from your browser or files app: allow it, then tap Install. If
   Play Protect asks, choose "Install anyway". On Android the GM runs on
   an API key or one of the "Other models"; Claude Code and Antigravity
-  are for computers.
+  are for computers. The Scribe works on the phone too, as long as the
+  model can use tools: Gemini, DeepSeek and OpenRouter can.
 
 PLAY ON YOUR PHONE WITH YOUR COMPUTER'S CLAUDE CODE (via Tailscale)
   Claude Code runs only on computers, but your phone can play a game
@@ -71,6 +72,18 @@ WHO NEEDS WHAT
       Google Gemini, OpenRouter's free models, Mistral and GLM, or a model
       on your own computer (Ollama, LM Studio, KoboldCpp and others).
       DeepSeek (V4 Flash) and Xiaomi MiMo are cheap paid options.
+
+KEEPING STORIES IN YOUR GOOGLE DRIVE (optional)
+  Settings > Account > "Google sign-in setup (advanced)" turns on
+  "Sign in with Google". Each story is then kept as one zip in a
+  "Campaign Keeper" folder in your own Google Drive, so a phone and a
+  computer signed in to the same account see the same stories. The app
+  can only see files it made itself; nothing is uploaded until you sign
+  in. Google needs the app to have its own free "client" first, which
+  takes about ten minutes in the Google Cloud console: the step-by-step
+  is in README.md under "Accounts and sync". Once that's done, press
+  "Sign in with Google...", open google.com/device in any browser and
+  type the code the app shows.
 
 Both warnings appear because the app isn't signed with a paid developer
 certificate. They show once per computer.

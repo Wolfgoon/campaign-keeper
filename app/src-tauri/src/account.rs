@@ -106,10 +106,25 @@ fn ok(r: Result<ureq::Response, ureq::Error>) -> R<Value> {
 
 const WAIT: Duration = Duration::from_secs(60);
 
+/// Google answers 400 or 401 when the client can't use the device flow at all — it was made as a
+/// Desktop app, a Web application or an Android app, which is the easy mistake in the console — or
+/// when its secret is missing or wrong. A bare "(401)" costs an afternoon, so name the fix.
+fn refused(e: String) -> String {
+    if e.contains("(401)") || e.contains("(400)") {
+        format!(
+            "{e} — signing in this way needs a Google client of the type \"TVs and Limited Input devices\", with \
+             its client secret. Desktop app, Web application and Android clients are refused here, and an \
+             Android client's package name and SHA-1 don't apply."
+        )
+    } else {
+        e
+    }
+}
+
 /// Start signing in. The page shows `user_code` and sends the player to `verification_url`.
 pub fn begin() -> R<Value> {
     let k = keys()?;
-    let v = ok(ureq::post("https://oauth2.googleapis.com/device/code").timeout(WAIT).send_form(&[("client_id", &k.id), ("scope", SCOPE)]))?;
+    let v = ok(ureq::post("https://oauth2.googleapis.com/device/code").timeout(WAIT).send_form(&[("client_id", &k.id), ("scope", SCOPE)])).map_err(refused)?;
     Ok(json!({
         "device_code": v["device_code"], "user_code": v["user_code"],
         "verification_url": v["verification_url"].as_str().unwrap_or("https://www.google.com/device"),
@@ -305,4 +320,20 @@ pub fn download(file_id: &str) -> R<Vec<u8>> {
 /// Move a story to the Drive trash (Google keeps it 30 days). Copies on devices are untouched.
 pub fn remove(file_id: &str) -> R<()> {
     ok(req("PATCH", &format!("https://www.googleapis.com/drive/v3/files/{file_id}"))?.send_json(json!({ "trashed": true }))).map(|_| ())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::refused;
+
+    #[test]
+    fn a_refused_client_is_told_which_type_to_make() {
+        let e = refused("Google Drive reported an error (401): Unauthorized".into());
+        assert!(e.starts_with("Google Drive reported an error (401): Unauthorized"), "{e}");
+        assert!(e.contains("TVs and Limited Input devices"), "{e}");
+        assert!(e.contains("client secret"), "{e}");
+        // A dead connection has nothing to do with the client, so it keeps its own words.
+        let offline = "Couldn't reach Google. Check your internet connection. (io)";
+        assert_eq!(refused(offline.into()), offline);
+    }
 }

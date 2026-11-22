@@ -14,7 +14,7 @@ use similar::{ChangeTag, TextDiff};
 use crate::campaign::{self, keeper, INSTRUCTIONS};
 use crate::chat::Entry;
 use crate::config::Config;
-use crate::engine::{antigravity, claude_code};
+use crate::engine::{antigravity, claude_code, openai};
 use crate::memory::transcript;
 
 const SYSTEM: &str = include_str!("../prompts/scribe.md");
@@ -155,6 +155,23 @@ fn tools() -> Value {
     ])
 }
 
+/// The same five tools in the shape OpenAI-compatible services take.
+fn tools_other() -> Value {
+    json!(tools()
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|t| json!({
+            "type": "function",
+            "function": {
+                "name": t["name"],
+                "description": t["description"],
+                "parameters": t["input_schema"],
+            },
+        }))
+        .collect::<Vec<_>>())
+}
+
 fn all_files(dir: &Path) -> String {
     let mut t = String::from("Here are the campaign files. Blank forms (_TEMPLATE.md) are included so you can copy their structure.\n");
     for f in campaign::files(dir) {
@@ -181,10 +198,63 @@ pub fn run(cfg: &Config, dir: &Path, entries: &[Entry], request: &str, include_c
     let prompt = user_prompt(entries, request, include_chat);
     match cfg.engine.as_str() {
         "api" => run_api(cfg, dir, &prompt),
+        "other" => run_other(cfg, dir, &prompt),
         "claude_code" => run_claude_code(cfg, dir, &prompt),
         "antigravity" => run_antigravity(cfg, dir, &prompt),
-        _ => Err("The Scribe edits files with tools, so it needs Claude Code, Antigravity, or an Anthropic API key (Settings). The GM can still play on other models.".into()),
+        other => Err(format!(
+            "The Scribe edits files with tools, so it needs Claude Code, Antigravity, an Anthropic API key, or a service that can use tools (Settings). \"{other}\" can't do that."
+        )),
     }
+}
+
+/// Any OpenAI-compatible service, through function calls. A phone has only this and the Anthropic
+/// API: Claude Code and Antigravity are desktop programs, so a phone's GM settings land here.
+fn run_other(cfg: &Config, dir: &Path, prompt: &str) -> Result<Outcome, String> {
+    if cfg.other_model.trim().is_empty() {
+        return Err("Choose a model in Settings → Other models before running the Scribe.".into());
+    }
+    let extra = "\n\n- The campaign files are in the first message. Read a file before you edit it; use replace_in_file for small changes and create_file for new ones.\n- Make the changes with the tools. Describing an edit without calling a tool changes nothing.";
+    let mut messages = vec![
+        json!({ "role": "system", "content": format!("{SYSTEM}{extra}") }),
+        json!({ "role": "user", "content": format!("{}\n\n{prompt}", all_files(dir)) }),
+    ];
+    let tools = tools_other();
+    let mut edits = BTreeMap::new();
+    let mut summary = String::new();
+    for _ in 0..40 {
+        let v = openai::chat(
+            cfg,
+            json!({ "model": cfg.other_model, "max_tokens": 16000, "messages": messages, "tools": tools, "tool_choice": "auto" }),
+        )?;
+        let msg = v["choices"][0]["message"].clone();
+        if let Some(t) = msg["content"].as_str() {
+            if !t.trim().is_empty() {
+                summary = t.trim().to_string();
+            }
+        }
+        let calls = msg["tool_calls"].as_array().cloned().unwrap_or_default();
+        if calls.is_empty() {
+            break;
+        }
+        messages.push(json!({ "role": "assistant", "content": msg["content"], "tool_calls": calls }));
+        for c in &calls {
+            let name = c["function"]["name"].as_str().unwrap_or("");
+            // A few services send the arguments as an object instead of a JSON string.
+            let args = match &c["function"]["arguments"] {
+                Value::String(s) => serde_json::from_str::<Value>(s).unwrap_or_else(|_| json!({})),
+                v => v.clone(),
+            };
+            let text = match tool(dir, &mut edits, name, &args) {
+                Ok(t) => t,
+                Err(e) => format!("Error: {e}"),
+            };
+            messages.push(json!({ "role": "tool", "tool_call_id": c["id"], "content": text }));
+        }
+    }
+    if summary.is_empty() {
+        summary = "The Scribe finished.".into();
+    }
+    Ok(Outcome { summary, proposals: proposals(dir, &edits) })
 }
 
 fn run_api(cfg: &Config, dir: &Path, prompt: &str) -> Result<Outcome, String> {
@@ -455,6 +525,88 @@ mod tests {
         restore(&d, &b).unwrap();
         assert_eq!(std::fs::read_to_string(d.join("03_NPCs/a.md")).unwrap(), "one");
         assert!(!d.join("03_NPCs/b.md").exists());
+    }
+
+    /// A stand-in for an OpenAI-compatible service: answers each request in turn, then stops.
+    fn mock_service(replies: Vec<Value>) -> String {
+        use std::io::Read;
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for reply in replies {
+                let (mut s, _) = listener.accept().unwrap();
+                let mut buf: Vec<u8> = Vec::new();
+                let mut chunk = [0u8; 4096];
+                let head_end = loop {
+                    let n = s.read(&mut chunk).unwrap();
+                    if n == 0 {
+                        break 0;
+                    }
+                    buf.extend_from_slice(&chunk[..n]);
+                    if let Some(i) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                        break i + 4;
+                    }
+                };
+                let head = String::from_utf8_lossy(&buf[..head_end.min(buf.len())]).to_lowercase();
+                let len: usize = head
+                    .lines()
+                    .find_map(|l| l.strip_prefix("content-length:"))
+                    .and_then(|v| v.trim().parse().ok())
+                    .unwrap_or(0);
+                while buf.len() < head_end + len {
+                    let n = s.read(&mut chunk).unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    buf.extend_from_slice(&chunk[..n]);
+                }
+                let body = reply.to_string();
+                let _ = write!(s, "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}", body.len());
+            }
+        });
+        format!("http://127.0.0.1:{port}/v1")
+    }
+
+    #[test]
+    fn an_other_service_edits_through_tool_calls_and_writes_nothing_yet() {
+        let url = mock_service(vec![
+            json!({ "choices": [{ "message": { "role": "assistant", "content": null, "tool_calls": [
+                { "id": "call_1", "type": "function", "function": {
+                    "name": "create_file",
+                    "arguments": "{\"path\":\"03_NPCs/tobin.md\",\"content\":\"# Tobin\\nA ferryman.\"}"
+                } }
+            ] } }] }),
+            json!({ "choices": [{ "message": { "role": "assistant", "content": "Wrote the new NPC." } }] }),
+        ]);
+        let d = camp();
+        let cfg = Config { engine: "other".into(), other_url: url, other_model: "mock".into(), ..Default::default() };
+        let o = run(&cfg, &d, &[], "Add the ferryman", false).unwrap();
+        assert_eq!(o.summary, "Wrote the new NPC.");
+        assert_eq!(o.proposals.len(), 1);
+        assert_eq!(o.proposals[0].path, "03_NPCs/tobin.md");
+        assert!(o.proposals[0].is_new);
+        // The proposal is only a proposal: the campaign on disk is untouched until it is approved.
+        assert!(!d.join("03_NPCs/tobin.md").exists());
+    }
+
+    #[test]
+    fn the_tools_travel_to_other_services_as_functions() {
+        let t = tools_other();
+        let list = t.as_array().unwrap();
+        assert_eq!(list.len(), 5);
+        assert_eq!(list[4]["type"], "function");
+        assert_eq!(list[4]["function"]["name"], "replace_in_file");
+        assert_eq!(list[4]["function"]["parameters"]["required"][2], "new_text");
+        assert!(list.iter().all(|f| f["function"]["description"].as_str().is_some_and(|d| !d.is_empty())));
+    }
+
+    #[test]
+    fn other_models_ask_for_a_model_before_any_network_call() {
+        let d = camp();
+        let cfg = Config { engine: "other".into(), other_url: "http://127.0.0.1:9/v1".into(), ..Default::default() };
+        let e = run(&cfg, &d, &[], "Tidy up", false).unwrap_err();
+        assert!(e.contains("Other models"), "{e}");
     }
 
     #[test]

@@ -1,6 +1,10 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { call, md, toast } from "../lib/api";
+  import { platform } from "../lib/platform.svelte";
+
+  // The Scribe edits files through the model's tools, so it can't run on every engine.
+  let { cfg } = $props();
 
   let presets = $state<any>({});
   let request = $state("");
@@ -10,6 +14,23 @@
   let picked = $state<Record<string, boolean>>({});
   let open = $state<Record<string, boolean>>({});
   let lastBackup = $state("");
+
+  // Who will do the editing, in the player's terms, and whether there's anyone to ask yet.
+  const brain = $derived.by(() => {
+    if (!cfg) return { name: "", ready: false, note: "" };
+    if (cfg.engine === "api") {
+      return cfg.api_key?.trim()
+        ? { name: "your Anthropic key", ready: true, note: "" }
+        : { name: "your Anthropic key", ready: false, note: "Add your API key in Settings, or pick another service there." };
+    }
+    if (cfg.engine === "other") {
+      const model = String(cfg.other_model ?? "").trim();
+      return model
+        ? { name: model, ready: true, note: "" }
+        : { name: "another service", ready: false, note: "Pick a service and a model in Settings → Other models. It has to be one that can use tools: the Gemini, DeepSeek and OpenRouter keys can." };
+    }
+    return { name: cfg.engine === "antigravity" ? "Antigravity" : "Claude Code", ready: true, note: "" };
+  });
 
   onMount(async () => {
     presets = await call("scribe_presets");
@@ -44,7 +65,13 @@
 
 <div class="pad scroll grow" style="max-width:900px;margin:0 auto">
   <h1>Scribe</h1>
-  <p class="muted">Claude reads the campaign files and the play session, and proposes edits. Nothing is written until you approve it.</p>
+  <p class="muted">The model reads the campaign files and the play session, and proposes edits. Nothing is written until you approve it.</p>
+  <p class="small muted">
+    Edits are made by {brain.name}.
+    {#if platform.mobile}This works on the phone: it uses the model from Settings, not a program on a computer.{/if}
+    {#if working}It can take a few minutes on a free service.{/if}
+  </p>
+  {#if !brain.ready}<p class="small error">{brain.note}</p>{/if}
   <div class="row" style="margin-bottom:8px">
     <button onclick={() => (request = presets.after)}>After-session checklist</button>
     <button onclick={() => (request = presets.log)}>Just the session log</button>
@@ -53,7 +80,7 @@
   <label class="field"><span>What should the Scribe do?</span><textarea rows="5" bind:value={request}></textarea></label>
   <label class="check" style="margin:8px 0"><input type="checkbox" bind:checked={includeChat} /> <span>Include this play session</span></label>
   <div class="row">
-    <button class="primary" disabled={working || !request.trim()} onclick={run}>{working ? "Working…" : "✏ Run the Scribe"}</button>
+    <button class="primary" disabled={working || !request.trim() || !brain.ready} onclick={run}>{working ? "Working…" : "✏ Run the Scribe"}</button>
     {#if lastBackup}<button onclick={restore}>Restore the backups and remove the new files</button>{/if}
   </div>
 

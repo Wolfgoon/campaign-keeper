@@ -34,3 +34,8 @@ pub fn local_ip() -> Option<std::net::IpAddr> {
 }
 /// Bumped when the wire format changes; a mismatch is refused with a clear message.
 pub const PROTOCOL: u32 = 3;
+
+/// How long to wait for another device to come to the line before saying it can't be reached.
+/// A phone on a slow network, a laptop waking up, a firewall that takes a moment: all of those
+/// still arrive inside a minute, and anything shorter calls a live host dead.
+pub const REACH: std::time::Duration = std::time::Duration::from_secs(60);

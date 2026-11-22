@@ -31,10 +31,12 @@ pub const NOTE_FILE: &str = "04_Quests/party_notes.md";
 const MAX_NOTE: usize = 20_000;
 const HEARTBEAT: Duration = Duration::from_secs(15);
 /// A player whose app sends heartbeats and then goes silent this long has dropped off (a phone
-/// that fell asleep, a cable pulled), and the table stops waiting for them.
+/// that fell asleep, a cable pulled), and the table stops waiting for them. Three minutes: longer
+/// than the client's own two, so a player whose line came back keeps their seat instead of finding
+/// it given away.
 #[cfg(not(test))]
 fn quiet() -> Duration {
-    Duration::from_secs(50)
+    Duration::from_secs(180)
 }
 /// Tests don't wait that long, and can change it.
 #[cfg(test)]
@@ -410,7 +412,8 @@ fn serve(app: Arc<dyn Host>, st: Shared, t: Arc<Table>, stream: TcpStream, addr:
     if blocked(&t, ip) {
         return;
     }
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(20)));
+    // A phone that just woke up, or a slow network, can take a while to finish saying hello.
+    let _ = stream.set_read_timeout(Some(super::REACH));
     let (tx, rx) = match handshake(stream, &t.code, true) {
         Ok(p) => p,
         Err(e) => {

@@ -107,11 +107,15 @@
     joining = false;
   }
 
-  // The line dropped (a phone slept, Wi-Fi blinked): take the seat back without asking.
+  // The line dropped (a phone slept, Wi-Fi blinked): take the seat back without asking. This keeps
+  // trying for three minutes. Each attempt can spend a minute waiting for the host to answer, and a
+  // phone that went to sleep takes a while to wake: giving up before that loses a seat that was
+  // only briefly out of reach.
   async function reconnect() {
     if (reconnecting) return;
     reconnecting = true;
-    for (let i = 0; i < 8 && reconnecting; i++) {
+    const until = Date.now() + 3 * 60_000;
+    for (let i = 0; reconnecting && Date.now() < until; i++) {
       await new Promise((r) => setTimeout(r, i ? 4000 : 800));
       if (!reconnecting) return;
       try {
@@ -124,7 +128,7 @@
     }
     if (!reconnecting) return;
     reconnecting = false;
-    error = "The connection to the host was lost.";
+    error = "The connection to the host was lost. The host may have closed the table; join again if they're still playing.";
     phase = "join";
     music.stop();
   }

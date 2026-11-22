@@ -6,8 +6,8 @@ A desktop app for playing tabletop-style campaigns with an AI Game Master: Claud
 
 | Your computer | Download |
 |---|---|
-| Windows 10 or 11 (64-bit) | [Campaign Keeper Setup 3.0.7.exe](https://github.com/Wolfgoon/campaign-keeper/raw/main/installers/Campaign%20Keeper%20Setup%203.0.7.exe) (version 3.0.7) |
-| Android phone or tablet (Android 7+) | [Campaign Keeper 3.0.2 (Android).apk](https://github.com/Wolfgoon/campaign-keeper/raw/main/installers/Campaign%20Keeper%203.0.2%20%28Android%29.apk) (version 3.0.2) |
+| Windows 10 or 11 (64-bit) | [Campaign Keeper Setup 3.1.2.exe](https://github.com/Wolfgoon/campaign-keeper/raw/main/installers/Campaign%20Keeper%20Setup%203.1.2.exe) (version 3.1.2) |
+| Android phone or tablet (Android 7+) | [Campaign Keeper 3.1.2 (Android).apk](https://github.com/Wolfgoon/campaign-keeper/raw/main/installers/Campaign%20Keeper%203.1.2%20%28Android%29.apk) (version 3.1.2) |
 | iPhone, iPad, or anything else with a web browser | Nothing to download for joining a friend's game: see **Joining without the app** below |
 | Mac (Apple Silicon or Intel, macOS 11+) | [Campaign Keeper 1.0.5.dmg](https://github.com/Wolfgoon/campaign-keeper/raw/main/installers/Campaign%20Keeper%201.0.5.dmg) (version 1.0.5; 2.x coming) |
 | Linux or Steam Deck (Desktop Mode) | [Campaign Keeper 1.0.5 (Linux & Steam Deck).tar.gz](https://github.com/Wolfgoon/campaign-keeper/raw/main/installers/Campaign%20Keeper%201.0.5%20%28Linux%20%26%20Steam%20Deck%29.tar.gz) (version 1.0.5; 2.x coming) |
@@ -31,6 +31,21 @@ The warnings appear because the app isn't signed with a paid developer certifica
   - An **Anthropic API key**.
   - **Antigravity** with your Google account (Windows 2.2.3 and later; computers only). The app sets it up for you: click **Set up Antigravity for me**, then **Sign in to Antigravity**.
   - **Other models:** pick a service from the list. Free options include Google Gemini, OpenRouter's free models, Mistral and GLM, or a model on your own computer with Ollama, LM Studio, KoboldCpp and others. DeepSeek (V4 Flash) and Xiaomi MiMo are cheap paid options.
+
+The **Scribe** (🛠 Host → ✏ Scribe) needs a model that can use tools: Claude Code, Antigravity, an Anthropic API key, or one of the other services, such as Gemini, DeepSeek or OpenRouter. On a phone it runs on the API key or the other service, with nothing installed on a computer.
+
+## Stories in your Google Drive (optional)
+
+Campaign Keeper can keep one zip of each story in a "Campaign Keeper" folder in your own Google Drive, so a phone and a computer signed in to the same account see the same stories. It stays off until this copy of the app is given a Google "client" of its own: a free ID from the Google Cloud console, about ten minutes, no card, no review. The same client works on Windows and on the phone.
+
+1. Sign in at [console.cloud.google.com](https://console.cloud.google.com/), make a project, then [enable the Drive API](https://console.cloud.google.com/flows/enableapi?apiid=drive.googleapis.com).
+2. **Google Auth Platform → Branding:** an app name and your email; user type **External**.
+3. **Google Auth Platform → Data Access → Add or remove scopes:** tick `https://www.googleapis.com/auth/drive.file` and save.
+4. **Google Auth Platform → Audience → Test users:** add the Google account you'll sign in with. Testing is fine, but Google expires those sign-ins after 7 days; **Publish app** stops that.
+5. **Google Auth Platform → Clients → Create client:** type **TVs and Limited Input devices**. Desktop app, Web application and Android clients are refused with a **401** — that form's package name and SHA-1 are for a different kind of sign-in and aren't needed.
+6. Campaign Keeper → **⚙ Settings → Account → Google sign-in setup (advanced):** paste the client ID and secret, **Save and check**, then **Sign in with Google…** and type the code it shows at [google.com/device](https://www.google.com/device).
+
+The app only ever sees files it created itself, and nothing is uploaded until you sign in. `app/README.md` has the long version, including what each error message means.
 
 ## Joining without the app
 

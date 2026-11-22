@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { open as pick } from "@tauri-apps/plugin-dialog";
   import { call, toast } from "../lib/api";
   import { platform } from "../lib/platform.svelte";
@@ -7,6 +8,21 @@
   let { cfg, open, created, join, settings } = $props();
   let making = $state(false);
   let title = $state("");
+  // The campaigns on this device, read from disk. The recent list can only name what was opened
+  // in a window that still remembers it; this is everything that is actually here.
+  let found = $state<any[]>([]);
+  let packing = $state(false);
+
+  onMount(async () => {
+    try {
+      found = await call<any[]>("list_campaigns");
+    } catch {
+      found = [];
+    }
+  });
+
+  // A story opened from somewhere else (a folder on a PC) keeps its place in the recent list.
+  let elsewhere = $derived((cfg.recent ?? []).filter((p: string) => !found.some((c) => c.path === p)));
 
   async function browse() {
     const p = await pick({ directory: true, title: "Open a campaign folder" });
@@ -26,6 +42,36 @@
 
   function shortName(p: string) {
     return p.split(/[\\/]/).pop();
+  }
+
+  /** When a campaign was last played, in the fewest words that still say it. */
+  function since(sec: number) {
+    const days = Math.floor((Date.now() - sec * 1000) / 86400000);
+    if (days <= 0) return "played today";
+    if (days === 1) return "played yesterday";
+    if (days < 7) return `played ${days} days ago`;
+    return `played ${new Date(sec * 1000).toLocaleDateString()}`;
+  }
+
+  function played(c: any) {
+    const saves = c.saves === 1 ? "1 save" : `${c.saves} saves`;
+    return c.modified ? `${saves} · ${since(c.modified)}` : saves;
+  }
+
+  async function forget(p: string) {
+    cfg.recent = cfg.recent.filter((x: string) => x !== p);
+    await call("forget_recent", { path: p });
+  }
+
+  /** One zip of every campaign, for a computer: a phone's own storage can't be browsed. */
+  async function saveCopy() {
+    packing = true;
+    try {
+      toast(`Saved a copy: ${await call<string>("export_campaigns")}`);
+    } catch (e) {
+      toast(e);
+    }
+    packing = false;
   }
 </script>
 
@@ -48,14 +94,27 @@
     {#if !platform.mobile}<button onclick={browse}>📂 Open a campaign folder…</button>{/if}
     <button onclick={join}>👥 Join a friend's game… <span class="muted small">no Claude account needed</span></button>
   {/if}
-  {#if cfg.recent?.length}
-    <h3 style="margin-top:6px">Recent</h3>
-    {#each cfg.recent as r}
+  {#if found.length}
+    <h3 style="margin-top:6px">Your campaigns</h3>
+    {#each found as c (c.path)}
       <div class="recent">
-        <button title={r} onclick={() => open(r)}>{shortName(r)}</button>
-        <button class="ghost" aria-label="Remove from this list" onclick={async () => { cfg.recent = cfg.recent.filter((x: string) => x !== r); await call("set_config", { cfg: $state.snapshot(cfg) }); }}>✖</button>
+        <button title={c.path} onclick={() => open(c.path)}>{c.name}<span class="muted small"> · {played(c)}</span></button>
       </div>
     {/each}
+  {/if}
+  {#if elsewhere.length}
+    <h3 style="margin-top:6px">{found.length ? "Also opened" : "Recent"}</h3>
+    {#each elsewhere as r (r)}
+      <div class="recent">
+        <button title={r} onclick={() => open(r)}>{shortName(r)}</button>
+        <button class="ghost" aria-label="Remove from this list" onclick={() => forget(r)}>✖</button>
+      </div>
+    {/each}
+  {/if}
+  {#if found.length}
+    <button class="ghost" disabled={packing} onclick={saveCopy}>
+      💾 {packing ? "Saving a copy…" : "Save a copy of every campaign (zip)"}
+    </button>
   {/if}
   <Account {open} />
   <button class="ghost" onclick={settings}>⚙ Settings</button>

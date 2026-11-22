@@ -201,8 +201,8 @@ fn serve(app: Arc<dyn Host>, st: Shared, t: Arc<Table>, mut stream: TcpStream, a
     if blocked(&t, ip) {
         return;
     }
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(20)));
-    let _ = stream.set_write_timeout(Some(Duration::from_secs(60)));
+    let _ = stream.set_read_timeout(Some(super::REACH));
+    let _ = stream.set_write_timeout(Some(super::REACH));
     let Some((path, headers)) = read_head(&mut stream) else { return };
     let header = |name: &str| headers.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str());
     if !header("upgrade").is_some_and(|u| u.eq_ignore_ascii_case("websocket")) {

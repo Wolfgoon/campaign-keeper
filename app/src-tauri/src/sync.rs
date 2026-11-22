@@ -59,7 +59,7 @@ fn skip(rel: &str) -> bool {
         || [".keeper/trash/", ".keeper/backups/", ".keeper/scribe-work/"].iter().any(|p| rel.starts_with(p))
 }
 
-fn read_all(dir: &Path) -> R<Files> {
+pub(crate) fn read_all(dir: &Path) -> R<Files> {
     let mut out = Vec::new();
     for e in walkdir::WalkDir::new(dir).sort_by_file_name().into_iter().flatten().filter(|e| e.file_type().is_file()) {
         let rel = campaign::rel(dir, e.path());

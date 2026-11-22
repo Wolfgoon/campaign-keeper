@@ -50,7 +50,7 @@
     {:else if part === "files"}
       <Files />
     {:else if part === "scribe"}
-      <Scribe />
+      <Scribe {cfg} />
     {:else if part === "memory"}
       <Memory />
     {:else}

@@ -1,8 +1,9 @@
-# Handoff: Campaign Keeper 3.0.7 (Windows; AI Game Master, AD System, serverless multiplayer)
+# Handoff: Campaign Keeper (Windows and Android 3.1.2; AI Game Master, AD System, serverless multiplayer)
 
 Repo: `C:\Users\patri\OneDrive\Documents\GitHub\campaign-keeper` (Tauri 2 + Svelte 5 + Rust). Windows, PowerShell.
-Everything described here is committed and pushed to `main` (latest version: 3.0.7, Windows exe only — the
-Android APK is still 3.0.2). Start with **Still to do** at the bottom of the version sections.
+Everything described here is committed and pushed to `main` except the 3.0.8, 3.1.0, 3.1.1 and 3.1.2 work at the
+end of this file (latest version: **3.1.2 for Windows and Android**). Start with **Still to do** at the
+bottom of the version sections.
 
 ## What was done
 - **New ruleset "AD System"**: Spirit's leveling, magic (frequencies) and crafting, ported from
@@ -483,6 +484,382 @@ as infinity and every cast was a rounding error.
 - **Speed and stamina are still enormous** (`dex ^ str * 0.01` is 10^8 at DEX 10, STR 10; stamina
   `str ^ hp * 0.1` is 10^9). They are display-only — nothing in the System spends or checks them — so they
   were left as ported. Same one-line change in `DERIVED` if the owner wants them on the same footing.
-- **Android is still 3.0.2** and has none of the 3.0.3–3.0.7 fixes.
+- **Android is now 3.0.7 too** — see below.
+
+## The Android APK for 3.0.7 (2026-11-22)
+
+`installers/Campaign Keeper 3.0.7 (Android).apk` — 23,963,113 bytes, versionCode **3000007**, versionName
+**3.0.7**, minSdkVersion 24 (Android 7+), targetSdkVersion 37, `native-code: 'arm64-v8a'`, SHA-256
+`af0e6e6bc86cf5ff1568677ba395e6e7a216800dc8092ee3b2b07fb92ab41ce8`. `apksigner verify --print-certs`
+gives `CN=Campaign Keeper`, SHA-256 `9b4b266b2faa4857bbcbaf9aa457f76800f3bfeb5368e11b91ca2b3b109832a2` —
+the same key as 2.3.0 and 3.0.0–3.0.2, so it upgrades in place. This carries every fix from 3.0.3 to 3.0.7
+(`all:` party lines and unnamed-line refusals, `define`/`class change`/`species change` with their level
+gates, and amplitude `int ^ 2 * 10`) and the rebuilt `dist/` (`index-C1R1GU3f.js`).
+
+- `cd app; npm run build` first (identical output to 3.0.7: `index-C1R1GU3f.js`, 270,543 bytes).
+- `npx tauri android build --apk --target aarch64` (env vars as in the command block above) stopped again at
+  "Creation symbolic link is not allowed for this system" after finishing the Rust build
+  (`libcampaign_keeper_lib.so`, 22,257,056 bytes, 2 m 01 s). It did regenerate
+  `gen/android/app/tauri.properties` as `versionCode=3000007`, `versionName=3.0.7`.
+- Fallback: the `.so` was copied to `gen/android/app/src/main/jniLibs/arm64-v8a/`, then
+  `gradlew.bat assembleArm64Release -x rustBuildArm64Release` finished in 1 m 15 s
+  (161 tasks, BUILD SUCCESSFUL) and wrote `app/src-tauri/gen/android/app/build/outputs/apk/arm64/release/app-arm64-release.apk`,
+  copied to `installers/` under the versioned name. The APK's `lib/arm64-v8a/libcampaign_keeper_lib.so` is
+  the fresh 22,257,056-byte build (stored uncompressed, so the size matches exactly).
+- `README.md`'s download table and `How to install.txt` now point at this APK.
+- Not installed from this machine: `adb devices` showed no phone attached, so the APK still needs to be
+  copied to the phone (or installed with `adb install -r`) before it has been run by hand.
+
+## 3.0.8, Android: finding a campaign again, and getting it off the phone (2026-11-22)
+
+The phone had two campaigns and no way back into either: the welcome screen offered only **Start a new
+campaign…**. What the owner saw on the device was the whole of the bug — no "Recent" list at all.
+
+**Why.** The one and only list of stories was `cfg.recent`, which `activate()` fills in as a campaign is
+opened and saves to `config.json`. But the window keeps its own snapshot of the settings, and every
+`set_config` (Settings, Join a game, the table, Voices, Sound) sends that snapshot back and replaces the
+whole file. A snapshot taken before a campaign was opened therefore wrote `recent: []` over the list. The
+phone's `config.json` still had the player's name in it (`Wolf`), so the file itself was being written —
+only the list was being lost. Nothing else on the welcome screen could reach a campaign, which is why the
+two stories were unreachable rather than merely unlisted.
+
+- **The app now lists what is on disk.** `campaign::find(&dir)` in `campaign.rs` reads the folder of
+  campaigns (`/data/user/0/com.wolfgoon.campaign_keeper/campaigns` on Android), keeps every folder that
+  `is_campaign` accepts, and returns each one's path, name, save count and when it was last played (the
+  newest of the folder, `.keeper/chat.json` and the newest file in `08_Saves`), newest first. The
+  `list_campaigns` command exposes it and `Welcome.svelte` draws **Your campaigns** from it, so a story
+  shows up whether or not anything remembers opening it. The recent list stays underneath as "Also
+  opened", minus anything already listed, for stories opened from elsewhere on a PC.
+- **A stale window can no longer forget a story.** `set_config` now keeps the settings' own `recent` and
+  `last_open` and only takes the rest from the window; the ✖ beside a recent entry calls the new
+  `forget_recent(path)` instead of rewriting the list.
+- **The window's copy stops going stale.** `App.svelte` re-reads `get_config` after `open_campaign` and
+  `new_campaign`, so the settings it saves back are the current ones.
+- **`export_campaigns` — a copy that can leave the device.** Zips every campaign (everything `.keeper/`
+  holds, minus trash, backups and half-written temp files) to the Documents folder, one entry per campaign
+  folder: `getExternalFilesDir(Documents)` on Android —
+  `/sdcard/Android/data/com.wolfgoon.campaign_keeper/files/Documents/` — and `Documents` on Windows, as
+  `Campaign Keeper <date> <time>.zip`. The welcome screen's **💾 Save a copy of every campaign (zip)**
+  button runs it and toasts the path. It deliberately does *not* set `large_file(true)`: that forces ZIP64,
+  and Windows Explorer and PowerShell's `Expand-Archive` then refuse the file with "A local file header is
+  corrupt" (the entries read as 4,294,967,295 bytes). `cargo test --lib`: **166 passed, 0 failed, 2
+  ignored** (new: `the_folder_of_campaigns_lists_what_is_there`).
+
+The two campaigns were recovered from the phone with that button and `adb pull`:
+`Super Earth` (`.keeper/chat.json` 613 bytes) and `Audacity` (`.keeper/chat.json` 111,978 bytes) — 58 files
+— unzipped into `C:\Users\patri\OneDrive\Documents\Campaign Keeper\`, where the Windows app lists them too.
+
+- Bumped to **3.0.8** in `app/package.json`, `app/src-tauri/Cargo.toml`, `app/src-tauri/Cargo.lock` and
+  `app/src-tauri/tauri.conf.json`; the Android CLI regenerated `gen/android/app/tauri.properties` as
+  `versionCode=3000008`, `versionName=3.0.8`. Frontend `npm run build`: `index-QAeiSslE.js`, 272.02 kB, and
+  `index-CrxweYxp.css`, 11.29 kB. **The frontend is embedded in `libcampaign_keeper_lib.so`**, not in the
+  APK's `assets/` — a UI change only reaches the APK through the Rust build, and `tauri-build` reruns it
+  when `dist/` changes.
+- **The top bar fits a phone.** `Close` used to sit off the right edge of the tab bar (it scrolled, which
+  nobody discovers); the campaign's name is the heading of the Overview page, so at 760px and under the
+  bar's title is hidden and the tabs are a little tighter: `Overview · Play · Party · Host · ⚙ · Close`,
+  all visible on the S24 Ultra.
+- `npx tauri android build --apk --target aarch64` (env vars as in the command block above) stopped at
+  "Creation symbolic link is not allowed for this system" after the Rust build; the same jniLibs fallback
+  finished the APK (`gradlew.bat assembleArm64Release -x rustBuildArm64Release`, BUILD SUCCESSFUL). The
+  APK's `lib/arm64-v8a/libcampaign_keeper_lib.so` hashes equal to
+  `src-tauri/target/aarch64-linux-android/release/libcampaign_keeper_lib.so`; the check that matters is the
+  embedded frontend, which the `.so` carries (`index-QAeiSslE.js` present, the older `index-Cr09FpeL.js`
+  absent).
+- `installers/Campaign Keeper 3.0.8 (Android).apk` — 24,039,821 bytes, versionCode 3000008, versionName
+  3.0.8, arm64-v8a only, minSdk 24 / targetSdk 37, SHA-256
+  `bc81204d2ec2182107b989ba9c66f25ca0a59a5efbae5aeff7d1a3b6ef0a592d`. `apksigner verify --print-certs`:
+  `CN=Campaign Keeper`, SHA-256 `9b4b266b…9832a2` — the same key as 2.3.0–3.0.7, so it installs over any of
+  them with the campaigns untouched.
+- **Checked on the phone** (SM-S928U1, `adb install -r`, data kept): the welcome screen lists `Super Earth`
+  and `Audacity` with their save counts and "played today"; both open (tap the `Audacity` row → the
+  Overview reads *Audacity*); `Close` returns to the list; the zip button wrote
+  `Campaign Keeper 2026-11-22 02.51.zip` (75,610 bytes, 58 files) to
+  `/sdcard/Android/data/com.wolfgoon.campaign_keeper/files/Documents/`, which `adb pull` + `Expand-Archive`
+  opened without complaint. A tap lands where the accessibility dump says: `uiautomator dump` is the honest
+  source of coordinates on this 450 dpi screen — the screenshots read about 6% short.
+- Windows stays at 3.0.7; the desktop app gets the same two list fixes and the export button whenever its
+  next exe is built from these sources.
+- **Still to do:** commit and push `installers/Campaign Keeper 3.0.8 (Android).apk`, `README.md`,
+  `HANDOFF.md` and the source changes — the README's raw link 404s until they are on `main`. The phone's
+  `Documents` folder still holds the first test zip (`Campaign Keeper 2026-11-22 02.49.zip`), which is the
+  ZIP64 one Windows can't open; it is inside `Android/data` and harmless, and deleting it needs the app or
+  root.
 
 
+## 3.1.0: the Scribe on any model, and a screen that fits a phone (2026-11-22)
+
+**The Scribe only ran on two of the four engines.** `scribe::run` matched `api` (Anthropic key) and the
+two desktop programs (Claude Code, Antigravity) and refused everything else. `Config::load` turns
+`claude_code`/`antigravity` into `other` on a phone, because neither program runs there — so on Android
+the Scribe could only ever answer *"it needs Claude Code, Antigravity, or an Anthropic API key"*. The one
+engine a phone actually uses was the one it refused.
+
+- **`scribe::run_other`** (`app/src-tauri/src/scribe.rs`): the same five tools and the same 40-round tool
+  loop, over `chat/completions` with `tools` and `tool_choice: "auto"`. `tools_other()` converts
+  `tools()` to the OpenAI function shape (`{type: "function", function: {name, description, parameters}}`).
+  The assistant message is echoed back with its `tool_calls`; each result returns as a `role: "tool"`
+  message keyed by `tool_call_id`; a failed tool answers `Error: …` so the model can correct itself.
+  Tool arguments are accepted as a JSON string or as an object (some services send one, some the other).
+  Nothing touches the disk: proposals, `apply` and `restore` are unchanged, so the review screen and the
+  backups behave exactly as with the other engines.
+- **`openai::chat`** (`engine/openai.rs`): one non-streaming request, retried once without
+  `max_tokens`/`tool_choice` when a service answers 400/422 — the same fallback `stream` already uses.
+- `Scribe.svelte` names the model it will use (*"Edits are made by gemini-flash-latest."*), says so on a
+  phone, and disables **✏ Run the Scribe** with an explanation when the chosen engine has no key or model
+  (`brain` is a `$derived.by`). `Host.svelte` passes `cfg` down. Settings' phone note now says the Scribe
+  needs a model that can use tools (Gemini, DeepSeek, OpenRouter…).
+- Tests: `an_other_service_edits_through_tool_calls_and_writes_nothing_yet` (a small TcpListener answers
+  like an OpenAI-compatible service: first a `create_file` tool call, then a summary — the proposal appears
+  and the disk stays untouched), `the_tools_travel_to_other_services_as_functions`, and
+  `other_models_ask_for_a_model_before_any_network_call` (the "choose a model" check happens before any
+  request, so it runs offline). `cargo test --lib`: **169 passed, 0 failed, 2 ignored**. `svelte-check`:
+  0 errors (the same 4 warnings as before, in `Client.svelte`).
+
+**Text size, not page zoom.** Appearance's slider set `documentElement.style.zoom`. Zoom scales the page
+but leaves the layout's idea of its own width alone: media queries keep matching the unzoomed width, so a
+phone's breakpoints move, `position: fixed` panels (the side panel, the map, the activity sheet) land in
+the wrong place, and the result is the "wonky" scaling the owner reported. `App.svelte`'s `applyTheme()`
+now sets `--ui-scale` (clamped 0.8–1.6) and `app.css` turns it into the root font size —
+`:root { font-size: calc(16px * var(--ui-scale, 1)) }` — with every type size and the key paddings moved
+to rem. The slider is labelled **Text size**.
+
+**A phone bar that fits.** Under 520px the four tabs drop their words (🏠 ▶ 👥 🛠, with `title` and
+`aria-label` keeping the names for screen readers and long-press), the flexible spacer stays so **⚙** and
+**Close** sit at the right edge where the thumb is, and the bar no longer has to scroll. Buttons get a
+40px minimum height (the composer's `.small` chips 32px), `input`/`textarea` stay at 16px under the text
+scale, list rows and tabs are taller, and a campaign file's own `#`/`##` headings inside a card, the story
+or the reader are held at body size on a phone instead of rendering as chapter titles (the Overview's
+"Active Quests" heading was the worst of them).
+- 3.1.0 in `app/package.json`, `app/src-tauri/Cargo.toml`, `Cargo.lock`, `tauri.conf.json`; the Android CLI
+  regenerated `gen/android/app/tauri.properties` as `versionCode=3001000`, `versionName=3.1.0`.
+- Built with the usual two steps: `npx tauri android build --apk --target aarch64` stopped at "Creation
+  symbolic link is not allowed for this system" after the Rust build
+  (`libcampaign_keeper_lib.so`, 22,292,640 bytes), then the fresh `.so` was copied into
+  `gen/android/app/src/main/jniLibs/arm64-v8a/` and
+  `gradlew.bat assembleArm64Release -x rustBuildArm64Release` finished (BUILD SUCCESSFUL in 47 s).
+  Frontend: `index-DgDgn3fz.js` (273,648 bytes) and `index-DSNI4G0s.css` (11,912 bytes), carried inside
+  the `.so` — the packaged `.so` is byte-identical (SHA-256 `680cbbe1…e431`) to the build output. (The
+  mock-service test was written after the APK was cut; it sits behind `#[cfg(test)]`, so the shipped code
+  is unchanged.)
+- `installers/Campaign Keeper 3.1.0 (Android).apk` — 23,998,701 bytes, versionCode 3001000, versionName
+  3.1.0, arm64-v8a, minSdk 24 / targetSdk 37, SHA-256
+  `67c96e08b499eae6fa0a8521d357c7bfcb9789b8097d00a695322dae90ad7d65`. `apksigner verify --print-certs`:
+  `CN=Campaign Keeper`, SHA-256 `9b4b266b…9832a2` — the same key as 2.3.0–3.0.8, so it installs over any of
+  them with the campaigns untouched. `zipalign -c -v 4`: verified. Installed on the phone with
+  `adb install -r` (data kept); `dumpsys package` reports 3.1.0 / 3001000.
+- Windows stays at 3.0.7; the next exe built from these sources is 3.1.0 and picks up the Scribe's new
+  engine, the text scale and the phone bar.
+- **Checked on the phone** (SM-S928U1, `adb install -r`, data kept, `dumpsys package` → 3.1.0 / 3001000):
+  - The bar is `🏠 ▶ 👥 🛠 ……… ⚙ Close` — icons only on the left, `Close` at the right edge at
+    x 905–1065 of 1080, no scrolling. Host's own tabs (`👥 Table 📁 Files ✏ Scribe 🧠 Memory 🔍 Search`)
+    all fit on one line (they end at x 928) and are 112 px tall.
+  - Welcome rows are 104 px tall (were 95); a campaign's `#`/`##` headings inside a card now sit at body
+    size instead of rendering as chapter titles.
+  - **The Scribe ran on the phone.** `Edits are made by deepseek-v4-flash. This works on the phone: it uses
+    the model from Settings, not a program on a computer.` On `Super Earth` it answered *"I haven't changed
+    anything, because there's nothing to change it from."* (the campaign holds only template files); on
+    `Audacity` (28 files, 112 KB chat) it proposed **13 changes** — `01_Character/executor.md`,
+    `00_GM/settings.md`, `02_World/…`, `03_NPCs/red_ants.md` and `the_boy_at_the_log.md` (NEW),
+    `06_Sessions/day1_the_fallen_log.md` (NEW), `07_Maps/map.md`, `05_Memory/pinned_memory.md`, … — with
+    a per-file diff under **Show changes**, and a closing "Unsure / left alone" list. **Discard all** cleared
+    it; nothing was written, which is the rule the tests pin down.
+  - Test images and `ui*.xml` were pulled off `/sdcard` afterwards.
+- **Still to do:** commit and push (source, `installers/Campaign Keeper 3.1.0 (Android).apk`, README,
+  HANDOFF, How to install) — the README's raw link 404s until it is on `main`. Everything from 3.0.8 is
+  still uncommitted too.
+
+---
+
+## 3.1.1 — patience on a slow line, files that scroll on a phone, an OOC button
+
+Three complaints, three fixes. Everything else is 3.1.0.
+
+**Connections now wait a minute.** Every wait a person sits through was short enough to call a live
+host dead: joining a table gave up after **6 s** (and the handshake after 20 s), a dropped client
+rejoined for only ~32 s, a service's model list timed out at 20 s, and the host dropped a silent
+player after 50 s while the client gave up at 45 s.
+- `net/mod.rs` has `REACH` (60 s): used for the join's connect, the client's handshake read, the
+  host's handshake read and a browser's request head (`net/client.rs`, `net/table.rs`, `net/web.rs`).
+  The client's "didn't answer" message now says it waited a minute.
+- `client::QUIET` 45 s → **120 s**, and the host's `table::quiet()` 50 s → **180 s**: the host now
+  outlasts the client, so a phone that slept for a minute finds its seat still there instead of the
+  round having moved on without it. Heartbeats are still every 15 s.
+- `Client.svelte`'s reconnect loop is now a **three-minute budget** (not 8 tries ≈ 32 s); the message
+  when it truly gives up says the host may have closed the table.
+- `openai::list_models` 20 s → 60 s, so **List models** on a phone's data plan stops failing.
+- Model replies were already generous (1800 s for Anthropic and OpenAI-compatible, 900 s for the
+  Scribe) and are untouched.
+
+**Files scroll on a phone.** The page's root never scrolls (`body { overflow: hidden }`), so the reader
+and the file list carry their own scrolling. `.split` and `.editor` were flex items with
+`min-height: auto`: on a phone (where `.split` turns into a column) the reader refused to shrink below
+its content, grew past the window, and nothing moved — only the editor's textarea, which scrolls
+inside itself, worked. That is why a long file could only be read by pressing **✏ Edit**. `.split`,
+`.editor`, `.reader` and `.tree .list` now all carry `min-height: 0` (with `overflow: hidden` on the
+editor), so the phone's reader scrolls like the desktop one; `-webkit-overflow-scrolling: touch` and
+`overscroll-behavior: contain` keep the momentum inside the pane.
+
+
+
+
+**An OOC button (all engines, every campaign).** The composer's mode row gained **`? OOC`** next to
+`> Do`, `" Say` and `~ Story`, and typing a message that starts with `?` does the same thing:
+- The turn goes to the GM as an out-of-character question. `game.rs` has `is_ooc()` (a leading `?`,
+  or `/ooc`), sends an `<out_of_character>` block with the question ("no narration, no time passing,
+  no checks… what has already happened is canon even where it disagrees with the files: never change,
+  soften or rewrite it; name a contradiction and let the player decide"), skips the referee, the
+  status window, the world-words ask and the whole change path — no `<rpg>`, no save block, no
+  activity, no memory filing — so an OOC answer cannot touch a sheet, a file or what the GM remembers.
+  Memory *recall* still runs: these questions are usually about what's true.
+- While the mode is on, three one-tap asks fill the box (they never send by themselves):
+  **✔ Confirm** ("what has definitely happened, what we know for certain, what's still unclear"),
+  **🔍 More detail** ("what I can see, hear, smell and touch… concrete and specific, consistent with
+  what is already written") and **🧷 No retcons** ("check this chat and the files for contradictions;
+  nothing may be changed, softened or rewritten; tell me plainly instead of narrating it away").
+  The placeholder changes with the mode, and the mode's tooltip explains itself.
+- Both entries carry `"ooc": true` (`lib.rs`'s `entry_view` exposes it): `Entry.svelte` shows the
+  question as a dashed **OOC** box and the answer as a plain panel with a gold rule rather than story
+  prose. An OOC reply is neither spoken aloud nor scored for music, and `Play.svelte` sends OOC
+  straight to the GM even while a table is open — a question is not a move in the round.
+- `prompts/running_inside.md` gained an **OUT OF CHARACTER** section with the same rules, and
+  `PROMPT_VERSION` went 7 → 8, so chats already running pick it up on their next turn.
+- Tests: `a_leading_question_mark_asks_out_of_character`,
+  `an_out_of_character_answer_leaves_the_story_alone`, and
+  `the_instructions_cover_questions_asked_out_of_character`. `cargo test --lib`: **172 passed, 0
+  failed, 2 ignored**. `svelte-check`: 0 errors, the same 4 warnings in `Client.svelte`.
+
+**Built and installed.** 3.1.1 in `app/package.json`, `app/src-tauri/Cargo.toml`, `Cargo.lock` and
+`tauri.conf.json`; the CLI wrote `gen/android/app/tauri.properties` as `versionCode=3001001`,
+`versionName=3.1.1`. The usual two steps: `npx tauri android build --apk --target aarch64` stopped at
+"Creation symbolic link is not allowed for this system" after the Rust build
+(`libcampaign_keeper_lib.so`, 22,285,248 bytes), the fresh `.so` was copied into
+`gen/android/app/src/main/jniLibs/arm64-v8a/`, and
+`gradlew.bat assembleArm64Release -x rustBuildArm64Release` finished (BUILD SUCCESSFUL in 1 m 5 s).
+`local.properties` was missing, so gradle needed `ANDROID_HOME=C:\Users\patri\AppData\Local\Android\Sdk`
+set in the shell.
+- Also fixed while checking it: a file's path in the editor's header ran on *under* the Edit/Save/Revert
+  buttons on a phone (the path shrank to nothing and spilled). It is now `.editor .path` with an
+  ellipsis, and under 760px the path takes the first line with the five buttons wrapping beneath it, so
+  the header reads `00_GM/settings.md` on one line and the buttons on the next.
+- `installers/Campaign Keeper 3.1.1 (Android).apk` — 23,991,305 bytes, versionCode 3001001,
+  versionName 3.1.1, arm64-v8a, minSdk 24 / targetSdk 37, SHA-256
+  `19107ba32117ca0de476d9caf7a2339654345450c65bf25fd58273964c781e90` (the second build, with the header
+  fix; the first was `b8068a0c…b5441`). `apksigner verify --print-certs`: `CN=Campaign Keeper`, SHA-256
+  `9b4b266b…9832a2` — the same key as 2.3.0–3.1.0, so it installs over any of them with the campaigns
+  untouched. `zipalign -c -v 4`: verified. Installed on the phone with `adb install -r` (data kept,
+  `lastUpdateTime` 2026-11-22 12:12:18); `dumpsys package` reports 3.1.1 / 3001001.
+
+**Windows, same day, from the same sources.** `cd app; npx tauri build` (vite → `index-Cs8WYg5H.css`
+12.66 kB, `index-DKRkUhEm.js` 275.46 kB; release cargo 3 m 47 s) made
+`app/src-tauri/target/release/bundle/nsis/Campaign Keeper_3.1.1_x64-setup.exe`, copied over
+`installers/Campaign Keeper Setup 3.1.1.exe` — 7,366,221 bytes, FileVersion and ProductVersion **3.1.1**,
+ProductName "Campaign Keeper", SHA-256
+`4b509c47bd0de870f2e9cfec55baf69e2774e0dde08a42b4a5e06e96a64c7c00`. NSIS, `installMode: currentUser`
+(no administrator), unsigned like every earlier exe, so SmartScreen says "Windows protected your PC" once
+per computer; it upgrades any 2.x/3.0.x/3.1.x install in place and leaves `Documents\Campaign Keeper`
+alone.
+- **Compatible with everything else at a table.** `net::PROTOCOL` is still **3** and 3.0.8–3.1.1 changed no
+  wire field, so a 3.1.1 Windows host, 3.0.x/3.1.x phones and browser tabs all still join each other —
+  `the_web_page_speaks_the_hosts_protocol` and the rest of the table tests enforce it. The campaign files
+  and saves have no schema change either, so 3.1.1 opens folders written by 2.x and 3.0.x, and older apps
+  open folders 3.1.1 writes.
+- **Checked on the desktop** (the freshly built exe, window "Campaign Keeper", ~29 MB): the welcome page
+  lists both campaigns plus "Also opened"; Audacity opened and Overview drew; **Host → Files** showed
+  `00_GM/settings.md` with the path on one line and Edit/Save/Revert/Rename…/Trash… to its right (the
+  760px wrap is phone-only) and the reader scrolled on its own scrollbar; **Play** showed the `? OOC`
+  chip, and clicking it brought the "Out of character: ✔ Confirm · 🔍 More detail · 🧷 No retcons" row
+  and the OOC placeholder, with **✔ Confirm** filling the box and sending nothing. Closed cleanly.
+- Driving the desktop from PowerShell works with `SetCursorPos` + `mouse_event(2/4)` in **physical** pixels
+  measured from a `CopyFromScreen` of `GetWindowRect` — but a click in the 2px gap between two chips does
+  nothing at all, silently (that cost one detour).
+- `README.md`'s download row and `How to install.txt` now say **3.1.1** for Windows too.
+- **Checked on the phone** (SM-S928U1, `adb install -r` twice, data kept, `dumpsys` → 3.1.1 / 3001001):
+  - **Files now scroll in read mode.** The tree scrolled from `00_GM/…` down to
+    `02_WORLD/ITEMS_AND_LORE`, and `00_GM/settings.md` opened, scrolled from its first heading to the
+    play-style list further down, and never needed **✏ Edit**. The header shows the path on its own
+    line with Edit/Save/Revert/Rename…/Trash… under it.
+  - **The OOC button works end to end.** Tapping **`? OOC`** lit the chip gold, the placeholder became
+    *"Ask out of character: confirm, more detail, no retcons"*, and the three asks appeared under it
+    (**✔ Confirm · 🔍 More detail · 🧷 No retcons**). **✔ Confirm** filled the box without sending;
+    **Send** got an answer in under 25 s from `deepseek-v4-flash`, drawn as a plain panel with a gold
+    rule (not story prose): what had definitely happened, "Nobody knows yet", one contradiction
+    flagged for the player to settle (the status window said the bite was on the *shin*, the canon
+    reading is the ankle actuator; the sheet's XP 175/437 beat the notebook's 60/437), and a closing
+    *"The story is exactly where it was…"*. No story was advanced and no checks were rolled.
+  - Driving the page from a PC: **`uiautomator dump` bounds are the exact touch coordinates**, while
+    positions read off a 1080×2340 screenshot are ~6% low (multiply by ≈1.06). The app had to be
+    relaunched after each `adb install -r`, and a locked phone shows a black screenshot until
+    `adb shell input keyevent 224` + the PIN.
+- `README.md`'s download row and `How to install.txt` point at `Campaign Keeper 3.1.1 (Android).apk` and
+  `Campaign Keeper Setup 3.1.1.exe`. Only Mac (1.0.5) and Linux (1.0.5) are still behind.
+- **Still to do:** commit and push — 3.0.8, 3.1.0, 3.1.1 and 3.1.2 are all uncommitted (the five new APKs
+  and `Campaign Keeper Setup 3.1.1.exe` / `3.1.2.exe` are untracked), and the README's raw links 404 until
+  they are on `main`. Then `installers/Campaign Keeper Setup 3.0.7.exe` and the older APKs can be deleted.
+
+## 3.1.2 — the Google sign-in instructions, and an answer for Android (2026-11-22)
+
+Words only, plus the two binaries built from them. No Rust behaviour changed, no wire change
+(`net::PROTOCOL` is still **3**), no schema change: 3.1.2 tables with 3.0.x/3.1.x phones and browser tabs.
+
+**Why.** The "Google sign-in setup (advanced)" block under Settings → Account said "make a client in the
+Google Cloud console" and left the reader to find the other five screens. The console has since been
+rebuilt around **Google Auth Platform**, which hides Branding / Data Access / Audience / Clients behind a
+project that has none yet, so the old one-line instruction led nowhere. The questions that actually cost
+an afternoon, in the order they come up:
+
+- The **client type** must be **TVs and Limited Input devices**. Device flow refuses a Desktop app, Web
+  application or **Android** client — that is the `401` / `invalid_client`. An Android client's *package
+  name and SHA-1* are for the Android sign-in SDK, which this app never uses: the same device-flow client
+  is pasted into the phone's own Settings and works on Windows, Linux and Android alike.
+- The scope `https://www.googleapis.com/auth/drive.file` has to be added under **Data Access** by hand,
+  or the device page answers `invalid_scope`.
+- A consent screen left in **Testing** expires every refresh token after **7 days** ("Your Google sign-in
+  has expired") and only lets listed **Test users** in ("Access blocked"). **Publish app** ends both; an
+  unverified public app keeps the one-tap "Google hasn't verified this app" warning, which is fine.
+
+**Three places, same walkthrough.**
+1. `app/src/views/Settings.svelte` — the `<details>` block is now six numbered console steps (Drive API →
+   Branding / External → Data Access with the exact scope string → Test users → **TVs and Limited Input
+   devices** → paste and **Save and check**), two buttons that open the Drive API enable page and the Auth
+   Platform (`@tauri-apps/plugin-opener`'s `openUrl`, already a dependency), the 7-day/Testing warning, the
+   "that's the 401" note with the Android sentence, and a closing line about `google.com/device` and the
+   `drive.file` folder.
+2. `app/README.md` — the same six steps for developers, the `google_oauth.json` shape, a Testing vs.
+   published paragraph, and a **"When sign-in doesn't work"** table mapping each message the app can print
+   to its cause (missing client, `invalid_client`, `invalid_scope`, Drive API disabled, `insufficientPermissions`
+   after adding the scope later, 7-day expiry, an expired device code, "Access blocked").
+3. `How to install.txt` — a short player-facing **"Keeping stories in your Google Drive (optional)"**
+   section: what sign-in does, that nothing uploads until you sign in, that the client is a ten-minute
+   one-off, and where the steps live.
+
+The Rust side already helped: `account::refused` appends the client-type fix to any 400/401 from the
+device endpoint (and says an Android client's package name and SHA-1 don't apply), so the phone shows the
+same instruction the docs do.
+
+**Built.** `npx tauri build` → `Campaign Keeper_3.1.2_x64-setup.exe`, copied over
+`installers/Campaign Keeper Setup 3.1.2.exe` — 7,348,114 bytes, FileVersion and ProductVersion **3.1.2**,
+ProductName "Campaign Keeper", SHA-256
+`27d8fcf82b3bf7ffccca0cbd02ca9ac2232cbefd71072ca4c2a6259042bd9a17`.
+Android: the usual two steps — `npx tauri android build --apk --target aarch64` stopped again at
+"Creation symbolic link is not allowed for this system" after the Rust build
+(`libcampaign_keeper_lib.so`, 22,296,960 bytes), the fresh `.so` was copied into
+`gen/android/app/src/main/jniLibs/arm64-v8a/`, and `gradlew.bat assembleArm64Release -x rustBuildArm64Release`
+reported BUILD SUCCESSFUL with `packageArm64Release` **UP-TO-DATE** — the same `.so`, the same APK.
+`installers/Campaign Keeper 3.1.2 (Android).apk` — 24,003,021 bytes, versionCode 3001002, versionName 3.1.2,
+arm64-v8a, minSdk 24 / targetSdk 37, package `com.wolfgoon.campaign_keeper`, SHA-256
+`47040c979adab7efe2c8dad67059fa618eace2edc20a73935d13e4b320d3c1b6`. `apksigner verify --print-certs`:
+`CN=Campaign Keeper`, SHA-256 `9b4b266b…9832a2`, **SHA-1 `c0673e93…3b3a64`** — the same key as 2.3.0–3.1.1.
+Installed with `adb install -r` (data kept, `lastUpdateTime` 2026-11-22 14:05:16), `dumpsys package`
+reports 3.1.2 / 3001002, and it launched.
+- Both binaries were checked for the words themselves, not assumed: the walkthrough string
+  (`TVs and Limited Input`, `google.com/device`, `Google sign-in setup`) is present in
+  `app/src-tauri/target/release/campaign-keeper.exe` and in the Android `.so` — a plain byte search with
+  ISO-8859-1, since the frontend is embedded in the binary.
+- `cd app; npm run check`: **0 errors**, the same 4 warnings in `Client.svelte`. No Rust change, so
+  `cargo test` was not rerun.
+- Also remember: the Android build deletes `jniLibs/arm64-v8a/libcampaign_keeper_lib.so` when the symlink
+  step fails, so the `.so` must be copied in before `gradlew` (it fails otherwise with a missing file, not
+  a symlink error).
+- **Still to do:** commit and push; delete `installers/Campaign Keeper Setup 3.0.7.exe` and the superseded APKs
+  once 3.0.8–3.1.2 are on `main`.

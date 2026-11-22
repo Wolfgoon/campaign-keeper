@@ -30,8 +30,9 @@
   let epoch = $state(0);
 
   // The story, the party and their notes are the whole table's. Host-only tools sit behind one tab.
+  // On a phone the bar shows just the icons (see app.css): five words plus Close don't fit.
   const TABS = [
-    ["overview", "🏠 Overview"], ["play", "▶ Play"], ["party", "👥 Party"], ["host", "🛠 Host"],
+    ["overview", "🏠", "Overview"], ["play", "▶", "Play"], ["party", "👥", "Party"], ["host", "🛠", "Host"],
   ];
 
   // Where the Host tab was last left, so "Scribe" in Play opens the Scribe, not the table.
@@ -56,7 +57,10 @@
   function applyTheme() {
     if (!cfg) return;
     document.documentElement.dataset.theme = cfg.dark_mode ? "dark" : "light";
-    document.documentElement.style.zoom = String(cfg.ui_scale || 1);
+    // Text size, not page zoom: zoom also shrinks the room the layout thinks it has, which moves
+    // the phone breakpoints and the fixed panels. The CSS turns this into the root font size.
+    const scale = Math.min(1.6, Math.max(0.8, Number(cfg.ui_scale) || 1));
+    document.documentElement.style.setProperty("--ui-scale", String(scale));
     music.setVolume(cfg.music_volume ?? 0.5, cfg.music_muted ?? false);
   }
 
@@ -111,6 +115,8 @@
       askConflict = syncState === "conflict";
       campaign = c;
       tab = "overview";
+      // Opening it put it in the settings' recent list: keep this window's copy in step.
+      cfg = await call("get_config");
     } catch (e) {
       toast(e);
     }
@@ -123,6 +129,15 @@
     syncState = "";
     await call("close_campaign");
     campaign = null;
+    cfg = await call("get_config");
+  }
+
+  /** A campaign made here: it opens straight into play. */
+  async function created(c: any) {
+    campaign = c;
+    tab = "play";
+    syncState = "";
+    sync();
     cfg = await call("get_config");
   }
 
@@ -158,14 +173,16 @@
   {:else if !campaign}
     {#if cfg}
       <div class="view">
-        <Welcome {cfg} {open} created={(c: any) => { campaign = c; tab = "play"; syncState = ""; sync(); }} join={() => (joined = true)} settings={() => (settingsOpen = true)} />
+        <Welcome {cfg} {open} {created} join={() => (joined = true)} settings={() => (settingsOpen = true)} />
       </div>
     {/if}
   {:else}
     <nav class="topbar" aria-label="Campaign">
       <span class="title" title={campaign.path}>{campaign.name}</span>
-      {#each TABS as [id, name]}
-        <button class="tab" class:on={tab === id} onclick={() => (tab = id)}>{name}</button>
+      {#each TABS as [id, icon, label]}
+        <button class="tab" class:on={tab === id} onclick={() => (tab = id)} title={label} aria-label={label}>
+          <span class="ico" aria-hidden="true">{icon}</span><span class="lbl">{label}</span>
+        </button>
       {/each}
       <span class="grow"></span>
       {#if music.title}

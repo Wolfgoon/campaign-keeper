@@ -25,7 +25,9 @@
 </script>
 
 {#if e.role === "user"}
-  {#if e.label && e.label !== "Round" && e.text !== e.label && e.text.startsWith("/load")}
+  {#if e.ooc}
+    <div class="msg-ooc"><b>OOC</b>{e.text.replace(/^\s*(\?|\/ooc)\s*/, "")}</div>
+  {:else if e.label && e.label !== "Round" && e.text !== e.label && e.text.startsWith("/load")}
     <div class="msg-note">{e.label}</div>
   {:else if e.text.startsWith("<round>")}
     <div class="round">
@@ -62,7 +64,7 @@
     </details>
   {/if}
 {:else if e.role === "assistant"}
-  <div class="msg-gm">{@html md(e.text)}</div>
+  <div class="msg-gm" class:ooc={e.ooc}>{@html md(e.text)}</div>
   {#each e.pictures ?? [] as p}
     <Art {p} />
   {/each}
@@ -73,7 +75,7 @@
     <div class="sys-notes">{#each e.map_notes as n}<span>🗺 {n}</span>{/each}</div>
   {/if}
   {#if e.saved_as}<div class="msg-note">Saved to {e.saved_as}</div>{/if}
-  {#if speak}
+  {#if speak && !e.ooc}
     <div><button class="ghost small" onclick={() => speak(e)}>💬 Read aloud</button></div>
   {/if}
 {:else if e.label}

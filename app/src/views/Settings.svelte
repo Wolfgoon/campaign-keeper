@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { getVersion } from "@tauri-apps/api/app";
+  import { openUrl } from "@tauri-apps/plugin-opener";
   import { call, toast, MODELS, AGY_MODELS } from "../lib/api";
   import { platform } from "../lib/platform.svelte";
   import Sound from "./Sound.svelte";
@@ -133,7 +134,7 @@
     {:else}
     <h3>Connect the GM</h3>
     <p class="small muted">The Play and Scribe tabs use this. Everything else works without it.</p>
-    {#if platform.mobile}<p class="small muted">On a phone or tablet the GM needs an API key or another service. Claude Code and Antigravity run on computers only.</p>{:else}
+    {#if platform.mobile}<p class="small muted">On a phone or tablet the GM needs an API key or another service. Claude Code and Antigravity run on computers only. The Scribe needs a service whose model can use tools, such as Gemini, DeepSeek or OpenRouter.</p>{:else}
     <label class="check"><input type="radio" bind:group={cfg.engine} value="claude_code" style="width:auto" /> <span>Claude Code: your Claude account and plan, no API key</span></label>{/if}
     <label class="check"><input type="radio" bind:group={cfg.engine} value="api" style="width:auto" /> <span>Anthropic API key: pay per use</span></label>
     {#if !platform.mobile}<label class="check"><input type="radio" bind:group={cfg.engine} value="antigravity" style="width:auto" /> <span>Antigravity: your Google account through the Antigravity CLI, no API key</span></label>{/if}
@@ -197,9 +198,22 @@
       <summary class="small">Google sign-in setup (advanced)</summary>
       <div class="col" style="margin-top:6px">
         <p class="small muted" style="margin:0">Signing in needs a Google "client": a free ID that tells Google which app is asking. Paste one here to turn sign-in on, or to use your own. Leave both blank to use the one this copy came with.</p>
+        <p class="small" style="margin:0">To make one in the Google Cloud console (free, no card, about ten minutes):</p>
+        <ol class="small" style="margin:0;padding-left:20px">
+          <li>Sign in at <b>console.cloud.google.com</b>, make a project, then enable the <b>Google Drive API</b> in it.</li>
+          <li>Left menu → <b>Google Auth Platform → Branding</b>: an app name and your email as support contact; user type <b>External</b>.</li>
+          <li><b>Google Auth Platform → Data Access</b> → <b>Add or remove scopes</b>: tick <br /><code>https://www.googleapis.com/auth/drive.file</code> ("see, edit, create and delete only the specific Google Drive files you use with this app"), then save.</li>
+          <li><b>Google Auth Platform → Audience → Test users</b>: add the Google account you'll sign in with. Without it the sign-in page says "Access blocked". While the app is in Testing, each sign-in stops working after <b>7 days</b>; <b>Publish app</b> (still free, no review needed for your own use) ends that.</li>
+          <li><b>Google Auth Platform → Clients → Create client</b>: application type <b>TVs and Limited Input devices</b> — a "Desktop app", "Web application" or "Android" client can't sign in this way (that's the 401). Copy the <b>client ID</b> and <b>client secret</b> into the two boxes below. The phone uses this same client: the Android form that asks for a package name and SHA-1 is for a different kind of sign-in and isn't needed here.</li>
+        </ol>
+        <div class="row">
+          <button class="ghost small" onclick={() => openUrl("https://console.cloud.google.com/flows/enableapi?apiid=drive.googleapis.com").catch(toast)}>Enable the Drive API</button>
+          <button class="ghost small" onclick={() => openUrl("https://console.cloud.google.com/auth/overview").catch(toast)}>Open the Google Auth Platform</button>
+        </div>
         <label class="field"><span>Google client ID</span><input bind:value={cfg.google_client_id} placeholder="1234-abcd.apps.googleusercontent.com" autocapitalize="off" autocomplete="off" spellcheck="false" /></label>
         <label class="field"><span>Google client secret</span><input type="password" bind:value={cfg.google_client_secret} autocomplete="off" /></label>
         <div class="row"><button onclick={async () => { await save(); acctKey++; }}>Save and check</button></div>
+        <p class="small muted" style="margin:0">After that the Account card shows <b>Sign in with Google…</b>: press it, then type the code it shows at <b>google.com/device</b> in any browser. <code>drive.file</code> means the app only ever sees files it made itself, in its own "Campaign Keeper" folder.</p>
       </div>
     </details>
 
@@ -245,7 +259,7 @@
 
     <h3>Appearance</h3>
     <label class="check"><input type="checkbox" bind:checked={cfg.dark_mode} onchange={save} /> <span>Dark mode</span></label>
-    <label class="field"><span>Size: {Math.round(cfg.ui_scale * 100)}%</span><input type="range" min="0.8" max="1.5" step="0.05" bind:value={cfg.ui_scale} onchange={save} /></label>
+    <label class="field"><span>Text size: {Math.round(cfg.ui_scale * 100)}%</span><input type="range" min="0.8" max="1.6" step="0.05" bind:value={cfg.ui_scale} onchange={save} /></label>
     <label class="field"><span>Reading speed: {cfg.tts_speed.toFixed(2)}x</span><input type="range" min="0.6" max="1.6" step="0.05" bind:value={cfg.tts_speed} /></label>
   </div>
 </div>

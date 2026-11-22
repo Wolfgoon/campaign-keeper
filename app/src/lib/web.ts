@@ -114,6 +114,10 @@ export async function webCall(cmd: string, args: any = {}): Promise<any> {
       return store(CFG, JSON.stringify(args.cfg));
     case "app_info":
       return { mobile: matchMedia("(pointer: coarse)").matches, library: "", web: true };
+    case "list_campaigns":
+      return [];
+    case "forget_recent":
+      return;
     case "table_scan":
       return [];
     case "client_join":

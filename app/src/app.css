@@ -39,18 +39,22 @@
 }
 
 * { box-sizing: border-box; }
+/* The Size setting under Appearance. Everything sized in rem follows it, so text grows without
+   the layout changing shape: zoom would also move the breakpoints and the fixed panels. */
+:root { font-size: calc(16px * var(--ui-scale, 1)); }
 html, body, #app { height: 100%; margin: 0; }
-body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--ui); overflow: hidden; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body { background: var(--bg); color: var(--ink); font: .875rem/1.5 var(--ui); overflow: hidden; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
 h1, h2, h3 { font-family: var(--story); font-weight: 600; margin: 0 0 .4em; line-height: 1.2; }
-h1 { font-size: 28px; } h2 { font-size: 20px; } h3 { font-size: 15px; }
+h1 { font-size: 1.75rem; } h2 { font-size: 1.25rem; } h3 { font-size: .9375rem; }
 p { margin: 0 0 .7em; }
 a { color: var(--accent); }
 .muted { color: var(--ink-2); }
-.small { font-size: 12px; }
+.small { font-size: .75rem; }
 .grow { flex: 1; min-width: 0; }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .col { display: flex; flex-direction: column; gap: 8px; }
-.pad { padding: 18px 22px; }
+.pad { padding: 1.125rem 1.375rem; }
 .scroll { overflow: auto; min-height: 0; }
 .mono { font-family: var(--mono); }
 .error { color: var(--danger); }
@@ -74,22 +78,23 @@ textarea { resize: vertical; }
 input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 input[type="range"] { accent-color: var(--accent); padding: 0; }
 label.field { display: flex; flex-direction: column; gap: 3px; }
-label.field > span { font-size: 12px; color: var(--ink-2); }
+label.field > span { font-size: .75rem; color: var(--ink-2); }
 label.check { display: flex; gap: 8px; align-items: flex-start; }
 
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: .75rem .875rem; }
 
 /* shell */
 .shell { display: flex; flex-direction: column; height: 100%; }
 .topbar { display: flex; align-items: center; gap: 2px; padding: 4px 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .topbar .title { font-family: var(--story); font-weight: 600; margin-right: 12px; max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tab { background: none; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 7px 11px; color: var(--ink-2); }
+.tab .ico { margin-right: .35em; }
 .tab:hover:not(:disabled) { color: var(--ink); }
 .tab.on { color: var(--ink); border-bottom-color: var(--gold); }
 .view { flex: 1; min-height: 0; display: flex; }
 
 /* welcome */
-.welcome { margin: auto; width: min(560px, 100%); padding: 24px; display: flex; flex-direction: column; gap: 14px; overflow: auto; max-height: 100%; }
+.welcome { margin: auto; width: min(560px, 100%); padding: 1.5rem; display: flex; flex-direction: column; gap: 14px; overflow: auto; max-height: 100%; }
 .welcome img { width: 72px; height: 72px; }
 .welcome button { text-align: left; padding: 9px 13px; }
 .recent { display: flex; gap: 4px; }
@@ -100,27 +105,32 @@ label.check { display: flex; gap: 8px; align-items: flex-start; }
 .story { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .log { flex: 1; overflow-y: auto; padding: 20px 8px 8px; }
 .log-inner { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
-.msg-gm { font: 17px/1.62 var(--story); }
+.msg-gm { font: 1.0625rem/1.62 var(--story); }
 .msg-gm p:last-child { margin-bottom: 0; }
-.msg-gm pre { font: 12.5px/1.25 var(--mono); overflow-x: auto; background: var(--panel); padding: 10px; border-radius: 6px; }
-.msg-gm table { border-collapse: collapse; font-size: 14px; }
+.msg-gm pre { font: .78125rem/1.25 var(--mono); overflow-x: auto; background: var(--panel); padding: 10px; border-radius: 6px; }
+.msg-gm table { border-collapse: collapse; font-size: .875rem; }
 .msg-gm td, .msg-gm th { border: 1px solid var(--line); padding: 3px 8px; }
 .msg-you { align-self: flex-end; max-width: 80%; background: var(--panel-2); border-radius: 10px 10px 2px 10px; padding: 7px 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .round { align-self: stretch; border-left: 2px solid var(--gold); padding: 2px 10px; display: flex; flex-direction: column; gap: 3px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .round b { color: var(--gold); font-weight: 600; }
-.msg-note { text-align: center; color: var(--ink-2); font-size: 12px; }
+.msg-note { text-align: center; color: var(--ink-2); font-size: .75rem; }
+/* Out of character: a question asked outside the story, and the plain answer to it. Both sit
+   apart from the prose, so it's clear the story has not moved on. */
+.msg-ooc { align-self: flex-end; max-width: 88%; background: var(--panel); border: 1px dashed var(--line); border-radius: 8px; padding: 6px 11px; font-size: .875rem; color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg-ooc b { color: var(--gold); font-size: .6875rem; letter-spacing: .06em; margin-right: 4px; }
+.msg-gm.ooc { font: .9375rem/1.55 var(--ui); color: var(--ink-2); background: var(--panel); border: 1px dashed var(--line); border-left: 3px solid var(--gold); border-radius: 6px; padding: 8px 12px; }
 .pic { margin: 8px 0; max-width: 460px; }
 .pic svg { width: 100%; height: auto; display: block; border-radius: 6px; }
 .pic img { width: 100%; height: auto; display: block; border-radius: 3px; image-rendering: pixelated; }
 .pic.tiny { max-width: 192px; }
-.pic figcaption { font-size: 12px; color: var(--ink-2); margin-top: 3px; }
-details.recall { font-size: 12px; color: var(--ink-2); }
+.pic figcaption { font-size: .75rem; color: var(--ink-2); margin-top: 3px; }
+details.recall { font-size: .75rem; color: var(--ink-2); }
 details.recall summary { cursor: pointer; }
 details.recall ul { margin: 4px 0; padding-left: 18px; }
 
 .composer { border-top: 1px solid var(--line); background: var(--panel); padding: 8px 12px; }
 .composer-inner { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 6px; }
-.modes button { padding: 2px 9px; font-size: 12px; }
+.modes button { padding: 2px 9px; font-size: .75rem; }
 .modes button.on { border-color: var(--gold); color: var(--gold); }
 .gauge { height: 4px; background: var(--panel-2); border-radius: 2px; overflow: hidden; width: 90px; }
 .gauge i { display: block; height: 100%; background: var(--accent); }
@@ -128,24 +138,24 @@ details.recall ul { margin: 4px 0; padding-left: 18px; }
 
 .side { width: 320px; flex: none; border-left: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
 .side-tabs { display: flex; border-bottom: 1px solid var(--line); }
-.side-tabs .tab { flex: 1; padding: 7px 2px; font-size: 12.5px; }
+.side-tabs .tab { flex: 1; padding: 7px 2px; font-size: .78125rem; }
 .side-body { flex: 1; overflow: auto; padding: 10px; min-height: 0; }
 .track { display: flex; gap: 6px; align-items: center; }
 @media (max-width: 1040px) { .side { width: 270px; } }
 
 /* the LitRPG system */
-.sys { font-family: var(--mono); font-size: 12.5px; color: var(--sys); background: var(--sys-bg); border: 1px solid var(--sys-line); border-radius: 3px; padding: 8px 11px; }
+.sys { font-family: var(--mono); font-size: .78125rem; color: var(--sys); background: var(--sys-bg); border: 1px solid var(--sys-line); border-radius: 3px; padding: 8px 11px; }
 .sys b { color: var(--ink); font-weight: 600; }
 .sys .tier { font-weight: 700; }
 .sys .tier.good { color: var(--ok); }
 .sys .tier.bad { color: var(--bad); }
 .sys ul { list-style: none; margin: 4px 0 0; padding: 0; }
-.sys .why { color: var(--ink-2); font-size: 11.5px; }
+.sys .why { color: var(--ink-2); font-size: .71875rem; }
 .sys-notes { display: flex; flex-wrap: wrap; gap: 5px; }
-.sys-notes span { font-family: var(--mono); font-size: 11.5px; color: var(--sys); background: var(--sys-bg); border: 1px solid var(--sys-line); border-radius: 3px; padding: 1px 7px; }
+.sys-notes span { font-family: var(--mono); font-size: .71875rem; color: var(--sys); background: var(--sys-bg); border: 1px solid var(--sys-line); border-radius: 3px; padding: 1px 7px; }
 .sys-notes span.up { color: var(--gold); border-color: var(--gold); }
 .sys-notes span.no { color: var(--bad); border-color: var(--bad); }
-.status h3 { font-family: var(--mono); color: var(--sys); font-size: 13.5px; margin: 0; }
+.status h3 { font-family: var(--mono); color: var(--sys); font-size: .84375rem; margin: 0; }
 .status .bar { height: 7px; background: var(--panel-2); border-radius: 1px; overflow: hidden; margin: 2px 0 6px; }
 .status .bar i { display: block; height: 100%; }
 .status .bar.hp i { background: #d9604f; } .status .bar.st i { background: #d9a93f; } .status .bar.mp i { background: #5a8fe0; } .status .bar.xp i { background: var(--sys); }
@@ -153,26 +163,33 @@ details.recall ul { margin: 4px 0; padding-left: 18px; }
 .status td { padding: 1px 0; vertical-align: top; }
 .status td.n { text-align: right; color: var(--ink); white-space: nowrap; }
 .status .sect { margin-top: 8px; border-top: 1px dashed var(--sys-line); padding-top: 6px; }
-.status button { padding: 0 6px; font-size: 11px; font-family: var(--mono); color: var(--gold); border-color: var(--gold); background: none; }
+.status button { padding: 0 6px; font-size: .6875rem; font-family: var(--mono); color: var(--gold); border-color: var(--gold); background: none; }
 
 /* maps */
-.map-pre { font: 12px/1.15 var(--mono); background: var(--sys-bg); color: var(--ink); border: 1px solid var(--line); border-radius: 3px; padding: 8px; overflow: auto; margin: 6px 0; white-space: pre; max-height: 52vh; }
+.map-pre { font: .75rem/1.15 var(--mono); background: var(--sys-bg); color: var(--ink); border: 1px solid var(--line); border-radius: 3px; padding: 8px; overflow: auto; margin: 6px 0; white-space: pre; max-height: 52vh; }
 .map-wide { position: fixed; inset: 40px; z-index: 22; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; box-shadow: 0 8px 40px rgb(0 0 0 / 50%); }
-.map-wide .map-pre { flex: 1; max-height: none; font-size: 15px; }
+.map-wide .map-pre { flex: 1; max-height: none; font-size: .9375rem; }
 
 /* files */
-.split { display: flex; flex: 1; min-width: 0; }
+/* The page itself never scrolls (body has overflow hidden), so these three carry their own
+   scrolling. Every one of them needs min-height: 0: without it a flex item refuses to shrink
+   below its content, the reader grows past the window, and nothing can be scrolled at all —
+   which is exactly what a phone with a long file did. */
+.split { display: flex; flex: 1; min-width: 0; min-height: 0; }
 .tree { width: 280px; flex: none; border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
-.tree .list { overflow: auto; flex: 1; padding: 6px; }
-.tree .dir { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-2); margin: 10px 4px 2px; }
-.tree button { display: block; width: 100%; text-align: left; background: none; border: none; padding: 2px 6px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree .list { overflow: auto; flex: 1; min-height: 0; padding: 6px; -webkit-overflow-scrolling: touch; }
+.tree .dir { font-size: .6875rem; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-2); margin: 10px 4px 2px; }
+.tree button { display: block; width: 100%; text-align: left; background: none; border: none; padding: 2px 6px; font-size: .8125rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tree button.on { background: var(--panel-2); color: var(--gold); }
-.editor { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.editor textarea { flex: 1; border: none; border-radius: 0; font: 13px/1.55 var(--mono); padding: 14px 18px; resize: none; }
-.reader { flex: 1; overflow: auto; padding: 16px 22px; font: 16px/1.6 var(--story); }
+.editor { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+/* A file's path can be longer than the room left beside its buttons: it ends in an ellipsis
+   instead of running on under them (on a phone it gets a line of its own). */
+.editor .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.editor textarea { flex: 1; border: none; border-radius: 0; font: .8125rem/1.55 var(--mono); padding: 14px 18px; resize: none; }
+.reader { flex: 1; min-height: 0; overflow: auto; padding: 16px 22px; font: 1rem/1.6 var(--story); -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 
 /* diff */
-.diff { font: 12.5px/1.45 var(--mono); border: 1px solid var(--line); border-radius: 6px; overflow: auto; max-height: 340px; }
+.diff { font: .78125rem/1.45 var(--mono); border: 1px solid var(--line); border-radius: 6px; overflow: auto; max-height: 340px; }
 .diff div { padding: 0 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .diff .add { background: color-mix(in srgb, var(--ok) 16%, transparent); }
 .diff .del { background: color-mix(in srgb, var(--bad) 16%, transparent); }
@@ -180,8 +197,8 @@ details.recall ul { margin: 4px 0; padding-left: 18px; }
 
 /* memory */
 .mem { display: flex; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--line); }
-.mem .kind { font-size: 11px; color: var(--gold); width: 56px; flex: none; }
-.stat { font-family: var(--story); font-size: 24px; line-height: 1; }
+.mem .kind { font-size: .6875rem; color: var(--gold); width: 56px; flex: none; }
+.stat { font-family: var(--story); font-size: 1.5rem; line-height: 1; }
 
 /* activity */
 .activity { position: fixed; inset: 40px; z-index: 20; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; display: flex; flex-direction: column; box-shadow: 0 8px 40px rgb(0 0 0 / 50%); }
@@ -189,7 +206,7 @@ details.recall ul { margin: 4px 0; padding-left: 18px; }
 .activity svg.canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
 .activity .art { position: absolute; inset: 0; }
 .activity .art svg { width: 100%; height: 100%; }
-.activity textarea { position: absolute; inset: 0; background: transparent; border: none; font: 17px/1.6 var(--story); padding: 18px 22px; resize: none; }
+.activity textarea { position: absolute; inset: 0; background: transparent; border: none; font: 1.0625rem/1.6 var(--story); padding: 18px 22px; resize: none; }
 
 .toast { position: fixed; bottom: 96px; left: 50%; transform: translateX(-50%); z-index: 30; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 14px; box-shadow: var(--shadow); max-width: 70%; }
 .modal-back { position: fixed; inset: 0; background: rgb(0 0 0 / 45%); display: flex; z-index: 25; }
@@ -201,28 +218,43 @@ details.recall ul { margin: 4px 0; padding-left: 18px; }
 .narrow-only { display: none; }
 @media (max-width: 760px) {
   .narrow-only { display: inline-block; }
-  button { padding: 7px 12px; }
+  /* Thumb-sized targets; the composer's little chips stay out of the way. */
+  button { padding: 9px 13px; min-height: 2.5rem; }
+  button.small { min-height: 2rem; padding: 4px 9px; }
   /* 16px stops phones zooming the page when a field is tapped. */
-  input, textarea, select { font-size: 16px; }
+  input, textarea, select { font-size: max(16px, 1rem); }
   .topbar { overflow-x: auto; white-space: nowrap; scrollbar-width: none; padding: 2px 6px; }
   .topbar::-webkit-scrollbar { display: none; }
   .topbar > * { flex: none; }
-  .topbar .grow { display: none; }
-  .topbar .title { max-width: 130px; margin-right: 4px; }
-  .tab { padding: 10px 9px; }
-  .pad { padding: 12px; }
-  .welcome { padding: 16px; }
-  .log { padding: 12px 10px 8px; }
-  .msg-gm { font-size: 16px; }
+  /* The spacer pushes Settings and Close to the right edge, where the thumb is. */
+  .topbar > .grow { flex: 1 1 auto; }
+  /* The campaign's name is the heading of the Overview page: the bar needs the room for Close. */
+  .topbar .title { display: none; }
+  .tab { padding: 11px 10px; }
+  .pad { padding: .75rem; }
+  .welcome { padding: 1rem; }
+  .log { padding: .75rem .625rem .5rem; }
+  .msg-gm { line-height: 1.7; }
   .msg-you { max-width: 92%; }
-  .composer { padding: 6px 8px; }
+  .composer { padding: .4rem .5rem; }
+  /* A campaign file's own # headings are chapter titles, not page titles: keep them in scale. */
+  .card :is(h1, h2, h3), .msg-gm :is(h1, h2, h3), .reader :is(h1, h2, h3) { font-size: 1.0625rem; }
+  .reader { padding: .75rem; }
   .side { display: none; position: fixed; inset: 0; width: auto; z-index: 21; border: none; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
   .side.open { display: flex; }
-  .side-tabs { overflow-x: auto; }
+  .side-tabs { overflow-x: auto; scrollbar-width: none; }
+  .side-tabs::-webkit-scrollbar { display: none; }
+  .side-tabs .tab { flex: none; padding: 11px 12px; }
   .split { flex-direction: column; }
   .tree { width: auto; max-height: 34%; border-right: none; border-bottom: 1px solid var(--line); }
-  .tree button { padding: 7px 6px; }
-  .reader { padding: 12px; }
+  .tree button { padding: 9px 6px; }
+  /* The file's path takes the first line, so the five buttons sit under it instead of on top. */
+  .editor > .row > .path { flex: 1 1 100%; }
   .activity, .map-wide { inset: 6px; }
   .toast { max-width: 92%; bottom: 130px; }
+}
+/* On a phone held in portrait the five tabs only fit as icons. */
+@media (max-width: 520px) {
+  .topbar .tab .lbl { display: none; }
+  .topbar .tab .ico { margin-right: 0; }
 }

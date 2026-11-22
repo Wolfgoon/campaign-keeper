@@ -71,7 +71,23 @@ fn get_config(s: S) -> R<Config> {
 #[tauri::command]
 fn set_config(s: S, cfg: Config) -> R<()> {
     let mut g = s.game.lock().map_err(|_| "state lost")?;
+    // Which campaigns were opened is decided here, not in the window: its copy of the settings can
+    // be older than the list, and saving it back would forget stories that are still on disk.
+    let mut cfg = cfg;
+    cfg.recent = g.cfg.recent.clone();
+    cfg.last_open = g.cfg.last_open.clone();
     g.cfg = cfg;
+    g.cfg.save()
+}
+
+/// Take one campaign off the recent list without touching the others.
+#[tauri::command]
+fn forget_recent(s: S, path: String) -> R<()> {
+    let mut g = s.game.lock().map_err(|_| "state lost")?;
+    g.cfg.recent.retain(|p| p != &path);
+    if g.cfg.last_open == path {
+        g.cfg.last_open.clear();
+    }
     g.cfg.save()
 }
 
@@ -171,6 +187,47 @@ fn new_campaign(s: S, parent: String, title: String) -> R<Value> {
     activate(&s, dir)
 }
 
+/// Every campaign this device keeps together, the most recently played first. A phone has no
+/// folder to browse, so this is how a story is found again.
+#[tauri::command]
+fn list_campaigns() -> Vec<campaign::Found> {
+    campaign::find(&config::library_dir())
+}
+
+/// Zip every campaign into one file the player can carry off the device. A phone's own storage
+/// can't be browsed, so this writes to the Documents folder, which a computer can copy from.
+#[tauri::command]
+fn export_campaigns(app: AppHandle) -> R<String> {
+    use std::io::Write;
+    let found = campaign::find(&config::library_dir());
+    if found.is_empty() {
+        return Err("There are no campaigns on this device to save.".into());
+    }
+    let e = |e: zip::result::ZipError| e.to_string();
+    let mut z = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    // No zip64: these zips are opened in Explorer and other everyday tools, and a story is small.
+    let opt = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    for c in &found {
+        for (rel, bytes) in sync::read_all(std::path::Path::new(&c.path))? {
+            z.start_file(format!("{}/{rel}", c.name), opt).map_err(e)?;
+            z.write_all(&bytes).map_err(|e| e.to_string())?;
+        }
+    }
+    let bytes = z.finish().map_err(e)?.into_inner();
+    let dir = app.path().document_dir().unwrap_or_else(|_| config::library_dir());
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let stamp = chrono::Local::now().format("%Y-%m-%d %H.%M").to_string();
+    let path = (1..200)
+        .map(|n| {
+            let name = if n == 1 { format!("Campaign Keeper {stamp}.zip") } else { format!("Campaign Keeper {stamp} ({n}).zip") };
+            dir.join(name)
+        })
+        .find(|p| !p.exists())
+        .ok_or("Too many copies were saved today.")?;
+    util::atomic_write(&path, &bytes)?;
+    Ok(path.display().to_string())
+}
+
 #[tauri::command]
 fn close_campaign(s: S) -> R<()> {
     if let Some(t) = s.net.lock().map_err(|_| "state lost")?.table.take() {
@@ -246,7 +303,7 @@ fn entry_view(i: usize, e: &Entry) -> Value {
     };
     json!({
         "idx": i, "role": e.role, "text": text, "label": e.label, "model": e.model, "usage": e.usage,
-        "recalled": e.recalled, "rpg": e.rpg, "private": e.flag("private"),
+        "recalled": e.recalled, "rpg": e.rpg, "private": e.flag("private"), "ooc": e.flag("ooc"),
         "pictures": e.extra.get("pictures"), "music": e.extra.get("music"), "voices": e.extra.get("voices"),
         "ambience": e.extra.get("ambience"), "map_notes": e.extra.get("map_notes"),
         "saved_as": e.extra.get("saved_as"), "character": e.extra.get("character"), "player": e.extra.get("player"),
@@ -839,7 +896,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_config, set_config, list_models, claude_status, claude_install, claude_sign_in, agy_status, agy_install, agy_sign_in, agy_models,
-            open_campaign, new_campaign, close_campaign, overview, list_files, read_file, write_file, rename_file,
+            open_campaign, new_campaign, close_campaign, list_campaigns, export_campaigns, forget_recent,
+            overview, list_files, read_file, write_file, rename_file,
             trash_file, search_files, store_save, new_session_log, get_entries, play_state, send_text, begin, stop_turn,
             end_chat, notebook, activity_close, export_all, pictures, maps, tracks, rpg_state, rpg_enable, rpg_disable, rpg_spend, rpg_terms, rpg_views,
             memory_status, memory_list, memory_search, memory_add, memory_update, memory_delete, memory_catch_up,

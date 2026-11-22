@@ -20,7 +20,7 @@ const FALLBACK_INSTRUCTIONS: &str = include_str!("../../../TEMPLATE/00_GM/ai_dun
 
 /// Bump when the instructions change: running chats then pick up the new abilities on their next
 /// turn, instead of only new games getting them.
-pub const PROMPT_VERSION: u32 = 7;
+pub const PROMPT_VERSION: u32 = 8;
 
 const ART_MODEL: &str = include_str!("../prompts/art_model.md");
 
@@ -197,4 +197,11 @@ mod tests {
         cfg.context_mode = "full".into();
         assert!(split_files(&cfg, &f).1.is_empty());
     }
+
+    #[test]
+    fn the_instructions_cover_questions_asked_out_of_character() {
+        assert!(RUNNING.contains("OUT OF CHARACTER"));
+        assert!(RUNNING.contains("Never change, soften or rewrite it"));
+    }
+
 }

@@ -40,11 +40,39 @@ Players sign in with Google, and each story is kept as one zip in a "Campaign Ke
 
 To turn accounts on in a build, put a Google OAuth client in `src-tauri/google_oauth.json`:
 
-1. In the [Google Cloud console](https://console.cloud.google.com/), make a project and enable the **Google Drive API**.
-2. Under **Google Auth Platform**, set up the consent screen (External), add the scope `.../auth/drive.file`, and publish the app ("In production"). While it's in "Testing", only listed test users can sign in and sign-ins expire after a week.
-3. Under **Clients**, create an OAuth client of type **TVs and Limited Input devices**. Copy its client ID and client secret into `google_oauth.json`.
+```json
+{ "client_id": "1234-abcd.apps.googleusercontent.com", "client_secret": "GOCSPX-..." }
+```
 
-With the file left blank the account card is hidden, and a client can still be pasted in at run time under **Settings > Account > Google sign-in setup**, which overrides the built-in one.
+With the file left blank (as it is in this repo, so the shipped builds have no client of their own) the account card is hidden, and a client can be pasted in at run time under **Settings > Account > Google sign-in setup**, which overrides the built-in one. That's the way to try it without rebuilding.
+
+### Making the client (once, free, about ten minutes)
+
+Sign in to <https://console.cloud.google.com/> with the same Google account you'll sign in with, use the project picker at the top to **New project**, then work down this list. Everything is under the left menu's **Google Auth Platform** section, which appears when the project has one; the console asks for **Branding** first if it has none.
+
+1. **Enable the Drive API.** Open <https://console.cloud.google.com/flows/enableapi?apiid=drive.googleapis.com> and press **Enable**. Without it every call fails with *"Google Drive API has not been used in project … or it is disabled"*.
+2. **Branding.** *Google Auth Platform → Branding*: an app name (`Campaign Keeper`) and your address as user support email and developer contact. If it asks for the user type, choose **External**.
+3. **Data Access.** *Google Auth Platform → Data Access → Add or remove scopes*: filter for `drive.file`, tick **`https://www.googleapis.com/auth/drive.file`** ("See, edit, create and delete only the specific Google Drive files you use with this app"), **Update**, **Save**. `openid` and `email` come along automatically and need nothing. Skipping this makes the device page answer **Error 400: invalid_scope**.
+4. **Test user, while the app is in Testing.** *Google Auth Platform → Audience → Test users → Add users*: the account you sign in with. Without it the device page says *"Access blocked: Campaign Keeper has not completed the Google verification process"*.
+5. **Client.** *Google Auth Platform → Clients → Create client*: application type **TVs and Limited Input devices**. This one matters — Google's device endpoint only accepts that type, so a **Desktop app**, **Web application** or **Android** client comes back `401 invalid_client` however right the secret is. (An Android client's *package name and SHA-1 fingerprint* belong to the Android sign-in SDK, which this app doesn't use; the same device client is pasted into the phone's own Settings.) Name it, **Create**, then copy the **Client ID** (ends `.apps.googleusercontent.com`) and the **Client secret**.
+6. **Paste it in.** Settings → Account → **Google sign-in setup (advanced)** → both boxes → **Save and check**; the Account card appears. Press **Sign in with Google…**, then type the code it shows at <https://www.google.com/device> in any browser, and approve. The "Google hasn't verified this app" screen (unverified app in production) is expected for a client you made yourself: **Advanced → Go to Campaign Keeper**.
+
+**Testing vs. published.** Testing is fine and needs no review, but Google expires the refresh token after **7 days**, so each device has to sign in again ("Your Google sign-in has expired. Sign in again."). Pressing **Publish app** under *Audience* keeps sign-ins until revoked; an unverified public app is capped at 100 users and shows the warning screen, which is fine for a table. A Google Workspace **Internal** app skips both the review and the cap.
+
+### When sign-in doesn't work
+
+| The app says | What it is |
+|---|---|
+| Google sign-in isn't set up yet. Add a Google client under Account in Settings. | No client: `google_oauth.json` is blank and nothing was pasted. |
+| Google refused the sign-in (401): `invalid_client` / `unauthorized_client` | Wrong client type (make a **TVs and Limited Input devices** one), or the secret was copied short, or the ID belongs to another project than the secret. |
+| Google refused the sign-in (400): `invalid_scope` | Step 3 wasn't done for this client's project. |
+| Google Drive reported an error (403): … has not been used in project … or it is disabled | Step 1: the Drive API isn't enabled. |
+| Google Drive reported an error (403): `insufficientPermissions` / *The granted scopes do not give access* | The account signed in before the scope was added. Remove the app at <https://myaccount.google.com/permissions> and sign in again. |
+| Your Google sign-in has expired. Sign in again. | Testing mode's 7-day expiry, a password change, or access revoked in the Google account. |
+| The code ran out. Start the sign-in again. | The device code lasts about 15 minutes. |
+| Access blocked: … has not completed the Google verification process | Step 4 (test user), or publish the app. |
+
+The client is only an ID and secret for *asking*; each player signs in with their own Google account and their stories live in their own Drive. `drive.file` also means the folder holds only files the app created — a story dropped into Drive by hand, or synced by the Drive desktop app from another machine, is invisible to it. Signing in is per device (the token is in `account.json` in the config folder), so a phone and a PC signed into the same account see the same stories.
 
 How sync decides: it compares this device's files, the account's copy, and what both were when they last matched. If only one side changed, that side is copied across. If both changed, the player chooses, and the files being replaced are zipped into a backup on the device first. It runs when a campaign opens, after each GM reply, and when it closes.
 

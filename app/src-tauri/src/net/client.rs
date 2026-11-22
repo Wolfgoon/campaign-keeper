@@ -28,8 +28,10 @@ fn token() -> String {
     t
 }
 
-/// The host sends a heartbeat every 15 seconds, so this much silence means the line is dead.
-const QUIET: Duration = Duration::from_secs(45);
+/// The host sends a heartbeat every 15 seconds, so this much silence means the line is dead. Two
+/// minutes, not seconds: a phone that went to sleep in a pocket, or Wi-Fi handing over to mobile
+/// data, takes longer than a blink to come back, and losing the seat over that is a worse trade.
+const QUIET: Duration = Duration::from_secs(120);
 const HEARTBEAT: Duration = Duration::from_secs(15);
 
 /// Every address the host's name could mean, IPv4 first: tables listen on IPv4, and a VPN name
@@ -61,10 +63,10 @@ pub fn join(app: AppHandle, addr: &str, code: &str, name: &str) -> Result<Tx<Val
     if name.trim().is_empty() {
         return Err("Enter your name to join.".into());
     }
-    let stream = targets(addr)?.into_iter().find_map(|sock| TcpStream::connect_timeout(&sock, Duration::from_secs(6)).ok()).ok_or_else(|| {
-        format!("{} didn't answer. Check that you're on the same network (or VPN) and that the host's firewall lets Campaign Keeper accept connections.", addr.trim())
+    let stream = targets(addr)?.into_iter().find_map(|sock| TcpStream::connect_timeout(&sock, super::REACH).ok()).ok_or_else(|| {
+        format!("{} didn't answer after a minute. Check that you're on the same network (or VPN) and that the host's firewall lets Campaign Keeper accept connections.", addr.trim())
     })?;
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(20)));
+    let _ = stream.set_read_timeout(Some(super::REACH));
     let (mut tx, mut rx) = handshake(stream, code, false).map_err(|e| if e == "code" { "The join code didn't match. Check it with the host.".to_string() } else { e })?;
     tx.send(&json!({ "t": "hello", "name": name.trim(), "token": token(), "protocol": PROTOCOL, "app": env!("CARGO_PKG_VERSION"), "pings": true }))?;
     rx.set_timeout(Some(QUIET))?;
