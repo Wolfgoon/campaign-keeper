@@ -48,17 +48,25 @@ ON AN IPHONE, IPAD, OR ANYTHING ELSE WITH A WEB BROWSER
   the code, and play. On the same Wi-Fi it just works; from somewhere
   else, both of you need a free VPN such as Tailscale.
 
-ON A MAC: "Campaign Keeper 1.0.5.dmg" (version 2.x coming)
-  Open it and drag Campaign Keeper into Applications. The first time you
-  open it, macOS may say it can't verify the app: click Done, then open
-  System Settings > Privacy & Security and click "Open Anyway".
+ON A MAC: "Campaign Keeper 3.1.2.dmg"
+  Open it and drag Campaign Keeper into Applications. The same file runs
+  on Apple Silicon and on Intel Macs. The first time you open it, macOS
+  may say it can't verify the app: click Done, then open System Settings >
+  Privacy & Security and click "Open Anyway".
 
-ON LINUX OR A STEAM DECK: "Campaign Keeper 1.0.5 (Linux & Steam Deck).tar.gz"
-  (version 2.x coming)
-  In Desktop Mode, right-click it > Extract > Extract archive here, open
-  the "Campaign Keeper" folder and double-click "Campaign Keeper Setup".
-  Click Install: it goes into the app menu, just for you. Use a mouse and
-  keyboard.
+ON LINUX OR A STEAM DECK: "Campaign Keeper 3.1.2 (Linux & Steam Deck).AppImage"
+  Nothing to install. Keep the one file wherever you like, make it
+  executable and open it. On a Steam Deck: go to Desktop Mode, open
+  Dolphin (the folder icon) or Firefox's downloads, right-click the file >
+  Properties > Permissions > tick "Is executable", then double-click it.
+  On other Linuxes the same, or in a terminal:
+    chmod +x "Campaign Keeper 3.1.2 (Linux & Steam Deck).AppImage"
+    ./"Campaign Keeper 3.1.2 (Linux & Steam Deck).AppImage"
+  Everything it needs (GTK, WebKit, its icons) is inside the file. Use a
+  mouse and keyboard, or Steam's on-screen keyboard in Desktop Mode.
+  To keep it in Steam: Steam > Games > Add a Non-Steam Game > Browse and
+  pick the AppImage. If your system has no FUSE 2 and it says it can't
+  mount itself, run it with --appimage-extract-and-run after the name.
 
 WHO NEEDS WHAT
   Players joining a friend's game: the app, or just a web browser.

@@ -9,15 +9,15 @@ A desktop app for playing tabletop-style campaigns with an AI Game Master: Claud
 | Windows 10 or 11 (64-bit) | [Campaign Keeper Setup 3.1.2.exe](https://github.com/Wolfgoon/campaign-keeper/raw/main/installers/Campaign%20Keeper%20Setup%203.1.2.exe) (version 3.1.2) |
 | Android phone or tablet (Android 7+) | [Campaign Keeper 3.1.2 (Android).apk](https://github.com/Wolfgoon/campaign-keeper/raw/main/installers/Campaign%20Keeper%203.1.2%20%28Android%29.apk) (version 3.1.2) |
 | iPhone, iPad, or anything else with a web browser | Nothing to download for joining a friend's game: see **Joining without the app** below |
-| Mac (Apple Silicon or Intel, macOS 11+) | [Campaign Keeper 1.0.5.dmg](https://github.com/Wolfgoon/campaign-keeper/raw/main/installers/Campaign%20Keeper%201.0.5.dmg) (version 1.0.5; 2.x coming) |
-| Linux or Steam Deck (Desktop Mode) | [Campaign Keeper 1.0.5 (Linux & Steam Deck).tar.gz](https://github.com/Wolfgoon/campaign-keeper/raw/main/installers/Campaign%20Keeper%201.0.5%20%28Linux%20%26%20Steam%20Deck%29.tar.gz) (version 1.0.5; 2.x coming) |
+| Mac (Apple Silicon or Intel, macOS 11+) | [Campaign Keeper 3.1.2.dmg](https://github.com/Wolfgoon/campaign-keeper/raw/main/installers/Campaign%20Keeper%203.1.2.dmg) (version 3.1.2) |
+| Linux or Steam Deck (x86-64, Desktop Mode) | [Campaign Keeper 3.1.2 (Linux & Steam Deck).AppImage](https://github.com/Wolfgoon/campaign-keeper/raw/main/installers/Campaign%20Keeper%203.1.2%20%28Linux%20%26%20Steam%20Deck%29.AppImage) (version 3.1.2) |
 
 ## Install
 
-- **Mac:** open the `.dmg` and drag Campaign Keeper into Applications. The first time you open it, macOS may say it can't verify the app: click Done, then go to System Settings → Privacy & Security and click **Open Anyway**.
+- **Mac:** open the `.dmg` and drag Campaign Keeper into Applications. It is a universal build, so it runs natively on Apple Silicon and on Intel Macs. The first time you open it, macOS may say it can't verify the app: click Done, then go to System Settings → Privacy & Security and click **Open Anyway**.
 - **Windows:** double-click the Setup file. If Windows says "Windows protected your PC", click **More info**, then **Run anyway**. It installs just for you, with no administrator needed. When Windows Firewall asks, allow Campaign Keeper on private networks so friends can join your games.
 - **Android:** open the `.apk` on the phone or tablet. Android asks whether to allow installing apps from your browser or files app: allow it, then tap Install. If Play Protect asks, choose **Install anyway**.
-- **Linux / Steam Deck:** in Desktop Mode, right-click the file → Extract → Extract archive here. Open the `Campaign Keeper` folder and double-click **Campaign Keeper Setup**. Use a mouse and keyboard.
+- **Linux / Steam Deck:** nothing to install. Put the `.AppImage` where you want it, make it executable (right-click → **Properties** → **Permissions** → **Is executable**, or `chmod +x` in a terminal), and double-click it. On a Steam Deck, do this in Desktop Mode; **Games → Add a Non-Steam Game** puts it in your Steam library. It carries its own GTK and WebKit, so no packages are needed. If it says it can't mount itself, add `--appimage-extract-and-run` to the command in a terminal.
 
 The warnings appear because the app isn't signed with a paid developer certificate. They show once per computer.
 
