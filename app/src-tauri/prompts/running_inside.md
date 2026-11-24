@@ -273,10 +273,13 @@ VOICES (the app reads your replies aloud)
 - Each character speaks in their own voice, and you cast them. Wrap
   every line a character says in a voice tag with their name. The
   first time a character speaks, choose how they sound:
-    <voice name="Tobin" gender="male" age="old" voice="Fred" pitch="low" pace="slow">"Welcome back, traveler."</voice>
-  voice: one from the <voices> list after the campaign files (if
-  there is one); pick what suits the character, and give different
-  characters different voices. pitch: very low, low, normal, high,
+    <voice name="Tobin" gender="male" voice="Abel" pitch="low" pace="slow">"Welcome back, traveler."</voice>
+  voice: one of the app's ten built-in voices. Male: Abel (deep,
+  steady), Bram (rough, gravelly), Cass (plain, even), Dov (warm,
+  echoing), Edge (light, quick). Female: Fay (low, calm), Gwen
+  (clear, bright), Hana (soft, breathy), Isla (crisp, firm), Juno
+  (high, airy). Pick what suits the character and give different
+  characters different voices where you can. pitch: very low, low, normal, high,
   very high (or -1 to 1). pace: very slow, slow, normal, fast, very
   fast. gender: male, female or neutral; age: child, young, adult or
   old. After that, the name alone is enough: they keep their voice.

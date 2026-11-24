@@ -1,5 +1,7 @@
-// The picture map's art. Every tile and token is a 64x64 sprite a model drew for this campaign and
-// the app reduced with k-means (see tileart.rs); this file only shows it. Until a piece arrives the
+// The picture map's art. Every tile and token is a 64x64 sprite a model drew as an SVG for this
+// campaign and the app reduced with k-means (see tileart.rs); this file only shows it. Natural
+// ground has several drawings ("grass", "grass~1", …), each shown in four orientations, so a
+// field rarely repeats. Until a piece arrives the
 // map uses a plain colour so you can still read it.
 
 export const T = 64;
@@ -9,8 +11,9 @@ export function variantAt(x: number, y: number) {
   return (Math.imul(x, 73856093) ^ Math.imul(y, 19349663)) >>> 0;
 }
 
-// Natural ground can be mirrored without looking wrong, which breaks up the repeat.
-const MIRROR = new Set(["grass", "forest", "water", "deep", "sand", "dirt", "snow", "swamp", "lava", "rock", "farm", "road"]);
+// Natural ground can be mirrored and turned without looking wrong, which breaks up the repeat.
+const MIRROR = new Set(["grass", "forest", "water", "deep", "sand", "dirt", "snow", "swamp", "lava", "rock", "farm", "cave", "mountain", "floor"]);
+const VARIANTS = 4;
 
 const STAND_IN: Record<string, string> = {
   void: "#07070b", grass: "#4f9a3c", forest: "#2a6a2a", water: "#2f6fc0", deep: "#173f7a", sand: "#e3cc8a", road: "#8a8070",
@@ -51,9 +54,11 @@ export function setArt(art: Record<string, string> | undefined, ready: () => voi
     urls[name] = url;
     const img = new Image();
     img.onload = () => {
-      for (const flip of [false, true]) {
-        cache.set(`${name}:${flip}`, canvas((c) => {
-          if (flip) { c.translate(T, 0); c.scale(-1, 1); }
+      // 0 as drawn, 1 mirrored, 2 upside down, 3 both.
+      for (const o of [0, 1, 2, 3]) {
+        cache.set(`${name}:${o}`, canvas((c) => {
+          c.translate(o & 1 ? T : 0, o & 2 ? T : 0);
+          c.scale(o & 1 ? -1 : 1, o & 2 ? -1 : 1);
           c.drawImage(img, 0, 0, T, T);
         }));
       }
@@ -70,8 +75,12 @@ function standIn(key: string, draw: (c: CanvasRenderingContext2D) => void) {
 }
 
 export function tile(name: string, at: number): HTMLCanvasElement {
-  const art = cache.get(`${name}:${MIRROR.has(name) && at % 2 === 1}`);
-  if (art) return art;
+  const drawn = [name, ...Array.from({ length: VARIANTS - 1 }, (_, k) => `${name}~${k + 1}`)].filter((n) => cache.has(`${n}:0`));
+  if (drawn.length) {
+    const pick = drawn[at % drawn.length];
+    const o = MIRROR.has(name) ? (at >>> 7) % 4 : name === "road" ? ((at >>> 7) % 2) * 2 : 0;
+    return cache.get(`${pick}:${o}`)!;
+  }
   return standIn(`plain:${name}`, (c) => { c.fillStyle = STAND_IN[name] ?? "#07070b"; c.fillRect(0, 0, T, T); });
 }
 
@@ -82,7 +91,7 @@ export function slug(name: string) {
 
 /** A named character's or thing's own sprite when it has one, else the kind's. */
 export function token(kind: string, name = ""): HTMLCanvasElement {
-  const art = (name && cache.get(`token:${slug(name)}:false`)) || cache.get(`${kind}:false`);
+  const art = (name && cache.get(`token:${slug(name)}:0`)) || cache.get(`${kind}:0`);
   if (art) return art;
   return standIn(`plain-token:${kind}`, (c) => {
     c.fillStyle = "#111";

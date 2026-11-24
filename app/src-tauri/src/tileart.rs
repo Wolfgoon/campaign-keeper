@@ -1,7 +1,9 @@
-//! The picture map's tiles and tokens, drawn by a model for each campaign, never by hand. With an
-//! image service set up (`art::paint`) each one is painted, cropped square and reduced; otherwise
-//! the helper model writes an SVG. Either way it goes through `pixel`'s k-means in Oklab, down to a
-//! 64x64 sprite with a small palette, so every tile shares the same chunky look.
+//! The picture map's tiles and tokens, drawn for each campaign by the helper model as SVG drawings
+//! (no generative painting), then put through `pixel`'s k-means in Oklab, down to a 64x64 sprite
+//! with a small palette, so every tile shares the same chunky look.
+//!
+//! Natural ground gets several different drawings (`grass`, `grass~1`, …) and the page also flips
+//! and turns them, so a field of grass hardly ever shows the same tile twice in a row.
 //!
 //! The art is styled after the campaign's world overview, kept in `.keeper/tileset/`, and made one
 //! piece at a time in the background: the map shows plain colour until a piece arrives.
@@ -16,7 +18,7 @@ use crate::campaign::keeper;
 use crate::config::Config;
 use crate::tilemap::{KINDS, TERRAIN};
 use crate::util::atomic_write;
-use crate::{art, engine, pixel};
+use crate::{engine, pixel};
 
 pub const SIZE: u32 = 64;
 const COLORS: usize = 16;
@@ -56,9 +58,30 @@ fn subject(name: &str) -> Option<(&'static str, bool)> {
     })
 }
 
-/// Every piece the map uses: the terrains (void is drawn as black) and the token kinds.
-pub fn names() -> Vec<&'static str> {
-    TERRAIN.iter().map(|(_, n)| *n).filter(|n| *n != "void").chain(KINDS.iter().copied()).collect()
+/// Ground that's drawn several times over, so it doesn't repeat.
+pub const NATURAL: &[&str] = &["grass", "forest", "water", "deep", "sand", "dirt", "snow", "swamp", "lava", "rock", "farm", "road", "floor", "wall", "mountain", "cave"];
+/// How many different drawings each natural ground gets.
+pub const VARIANTS: usize = 4;
+
+/// Every piece the map uses: the terrains (void is drawn as black), their extra drawings
+/// ("grass~1"), and the token kinds.
+pub fn names() -> Vec<String> {
+    let mut v: Vec<String> = TERRAIN.iter().map(|(_, n)| n.to_string()).filter(|n| n != "void").collect();
+    for n in NATURAL {
+        for k in 1..VARIANTS {
+            v.push(format!("{n}~{k}"));
+        }
+    }
+    v.extend(KINDS.iter().map(|k| k.to_string()));
+    v
+}
+
+/// "grass~2" -> ("grass", 2).
+fn base(name: &str) -> (&str, usize) {
+    match name.split_once('~') {
+        Some((b, k)) => (b, k.parse().unwrap_or(0)),
+        None => (name, 0),
+    }
 }
 
 fn folder(dir: &Path) -> PathBuf {
@@ -74,7 +97,7 @@ fn data_url(b: &[u8]) -> String {
 pub fn all(dir: &Path) -> BTreeMap<String, String> {
     let mut out: BTreeMap<String, String> = names()
         .into_iter()
-        .filter_map(|n| Some((n.to_string(), data_url(&std::fs::read(folder(dir).join(format!("{n}.png"))).ok()?))))
+        .filter_map(|n| { let b = std::fs::read(folder(dir).join(format!("{n}.png"))).ok()?; Some((n, data_url(&b))) })
         .collect();
     for e in std::fs::read_dir(folder(dir)).into_iter().flatten().flatten() {
         let f = e.file_name().to_string_lossy().into_owned();
@@ -127,15 +150,11 @@ fn make_named(cfg: &Config, dir: &Path, name: &str, kind: &str) -> Result<(), St
     let about = described(dir, name);
     let what = if about.is_empty() { format!("{name}: {base}") } else { format!("{name}, {base}. From the campaign's notes: {about}") };
     let world = style(dir);
-    let png = if art::enabled(cfg) {
-        from_painter(cfg, &format!("t_{}", slug(name)), &what, true, &world).or_else(|_| from_model(cfg, name, &what, true, &world))?
-    } else {
-        from_model(cfg, name, &what, true, &world)?
-    };
+    let png = from_model(cfg, name, &what, true, &world, "")?;
     atomic_write(&named_path(dir, name), &png)
 }
 
-pub fn missing(dir: &Path) -> Vec<&'static str> {
+pub fn missing(dir: &Path) -> Vec<String> {
     names().into_iter().filter(|n| !folder(dir).join(format!("{n}.png")).exists()).collect()
 }
 
@@ -150,35 +169,19 @@ const SVG_PROMPT: &str = "\
 You are a pixel artist making one 64x64 sprite for a top-down tile map in a story game. Reply with ONE complete SVG and nothing \
 else: <svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\" width=\"64\" height=\"64\">…</svg>. Use only rect, circle, \
 ellipse, polygon, path and g with solid fill colours; no text, no images, no gradients, no filters. Bold, readable shapes with \
-a darker outline and a light highlight side. A TILE must cover the whole 64x64 square edge to edge and look good repeated next \
-to itself. A TOKEN stands alone on a transparent background, centred, feet near the bottom, filling most of the height.";
+a darker outline and a light highlight side. A TILE must cover the whole 64x64 square edge to edge and sit well next to itself: keep its \
+edges the plain base colour and scatter details (tufts, stones, ripples, cracks, leaves) unevenly, never in a grid. A TOKEN stands alone on a transparent background, centred, feet near the bottom, filling most of the height.";
 
-fn from_model(cfg: &Config, name: &str, what: &str, token: bool, world: &str) -> Result<Vec<u8>, String> {
-    let user = format!("Make the {} '{name}': {what}.\nThe game's world, for colours and mood: {world}", if token { "TOKEN" } else { "TILE" });
+fn from_model(cfg: &Config, name: &str, what: &str, token: bool, world: &str, extra: &str) -> Result<Vec<u8>, String> {
+    let user = format!("Make the {} '{name}': {what}.{extra}\nThe game's world, for colours and mood: {world}", if token { "TOKEN" } else { "TILE" });
     let reply = engine::helper(cfg, SVG_PROMPT, &user)?;
     let start = reply.find("<svg").ok_or("the model sent no picture")?;
     let end = reply.rfind("</svg>").ok_or("the model's picture was cut off")? + 6;
     pixel::from_svg(&reply[start..end], &pixel::Opts { size: SIZE, colors: COLORS, dither: false, palette: None })
 }
 
-fn from_painter(cfg: &Config, name: &str, what: &str, token: bool, world: &str) -> Result<Vec<u8>, String> {
-    let prompt = if token {
-        format!("{what}, single game sprite, centred, whole figure visible, on a plain flat solid magenta background, world: {world}")
-    } else {
-        format!("{what}, seamless square game texture tile, filling the frame edge to edge, world: {world}")
-    };
-    let bytes = art::paint(cfg, &format!("tile {name}"), &prompt, true)?;
-    // Paintings come wide; the middle square is what a tile needs.
-    let img = image::load_from_memory(&bytes).map_err(|e| e.to_string())?;
-    let side = img.width().min(img.height());
-    let sq = img.crop_imm((img.width() - side) / 2, (img.height() - side) / 2, side, side);
-    let mut png = std::io::Cursor::new(Vec::new());
-    sq.write_to(&mut png, image::ImageFormat::Png).map_err(|e| e.to_string())?;
-    let small = pixel::from_image(png.get_ref(), &pixel::Opts { size: SIZE, colors: COLORS, dither: false, palette: None })?;
-    if token { cut_background(&small) } else { Ok(small) }
-}
-
 /// After k-means the backdrop is one or two palette colours: whatever matches the corners goes clear.
+#[allow(dead_code)]
 fn cut_background(png: &[u8]) -> Result<Vec<u8>, String> {
     let mut img = image::load_from_memory(png).map_err(|e| e.to_string())?.to_rgba8();
     let (w, h) = img.dimensions();
@@ -195,14 +198,15 @@ fn cut_background(png: &[u8]) -> Result<Vec<u8>, String> {
 
 /// Make one piece and keep it.
 pub fn make(cfg: &Config, dir: &Path, name: &str) -> Result<(), String> {
-    let (what, token) = subject(name).ok_or_else(|| format!("unknown piece {name}"))?;
+    let (b, k) = base(name);
+    let (what, token) = subject(b).ok_or_else(|| format!("unknown piece {name}"))?;
     let world = style(dir);
-    let png = if art::enabled(cfg) {
-        // A painting service can be down; the model's SVG still makes real art.
-        from_painter(cfg, name, what, token, &world).or_else(|_| from_model(cfg, name, what, token, &world))?
-    } else {
-        from_model(cfg, name, what, token, &world)?
+    // Each extra drawing of the same ground is told to differ, so neighbours don't match.
+    let extra = if k == 0 { String::new() } else {
+        let looks = ["details clustered toward one corner", "a sparse, mostly plain patch", "one larger feature off-centre and small bits elsewhere"];
+        format!(" This is drawing {} of {VARIANTS} of the same ground: same colours, but {}, so it doesn't look like the others.", k + 1, looks[(k - 1) % looks.len()])
     };
+    let png = from_model(cfg, b, what, token, &world, &extra)?;
     atomic_write(&folder(dir).join(format!("{name}.png")), &png)
 }
 
@@ -213,18 +217,25 @@ static FAILED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 /// Make whatever is missing, calling `made` after each piece so the page can show it.
 pub fn fill(cfg: &Config, dir: &Path, mut made: impl FnMut(&str), mut failed: impl FnMut(&str, &str)) {
     let Ok(_g) = FILLING.try_lock() else { return };
+    // Tiles made before 3.2.0 may be paintings: clear them once so they're all drawings.
+    let mark = folder(dir).join("drawn-v2");
+    if !mark.exists() {
+        let _ = std::fs::remove_dir_all(folder(dir));
+        let _ = std::fs::create_dir_all(folder(dir));
+        let _ = std::fs::write(&mark, "");
+    }
     for name in missing(dir) {
         let key = format!("{}|{name}", dir.display());
         if FAILED.lock().map(|f| f.as_ref().is_some_and(|s| s.contains(&key))).unwrap_or(false) {
             continue;
         }
-        match make(cfg, dir, name) {
-            Ok(()) => made(name),
+        match make(cfg, dir, &name) {
+            Ok(()) => made(&name),
             Err(e) => {
                 if let Ok(mut f) = FAILED.lock() {
                     f.get_or_insert_with(HashSet::new).insert(key);
                 }
-                failed(name, &e);
+                failed(&name, &e);
             }
         }
     }
@@ -266,7 +277,7 @@ mod tests {
     #[test]
     fn every_piece_has_a_subject() {
         for n in names() {
-            assert!(subject(n).is_some(), "{n}");
+            assert!(subject(base(&n).0).is_some(), "{n}");
         }
     }
 

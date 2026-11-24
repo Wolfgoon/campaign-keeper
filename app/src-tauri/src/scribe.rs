@@ -326,6 +326,7 @@ fn run_claude_code(cfg: &Config, dir: &Path, prompt: &str) -> Result<Outcome, St
     let extra = "\n\n- The campaign folder is your current directory. Read a file before you edit it.\n- Use Edit for targeted updates, and Write for new files.";
     let sys = keeper(dir).join("scribe_system.md");
     std::fs::write(&sys, format!("{SYSTEM}{extra}")).map_err(|e| e.to_string())?;
+    claude_code::trust(dir);
     let mut cmd = claude_code::command(&exe);
     cmd.args(["-p", "--strict-mcp-config", "--setting-sources", "", "--permission-mode", "acceptEdits", "--tools", "Read,Edit,Write,Glob,Grep", "--model", &cfg.model, "--effort", &cfg.effort])
         .arg("--system-prompt-file")
@@ -372,6 +373,7 @@ fn run_antigravity(cfg: &Config, dir: &Path, prompt: &str) -> Result<Outcome, St
         "<system>\n{SYSTEM}{extra}\n</system>\n\nThe campaign files are in the current directory. README.md explains the layout, and the _TEMPLATE.md files are the blank forms for new entries.\n\n{prompt}"
     );
     let payload = antigravity::input_line(&full);
+    claude_code::trust(&work);
     let mut cmd = claude_code::command(&exe);
     cmd.args([
         "--print=",

@@ -55,6 +55,42 @@ pub fn find(cfg: &Config) -> Option<PathBuf> {
     None
 }
 
+/// Mark a folder as trusted in Claude Code's own settings (`~/.claude.json`), so it never stops
+/// to ask "Do you trust the files in this folder?" for the folders this app runs it in.
+/// Leaves the file alone if it can't be read as JSON.
+pub fn trust(dir: &Path) {
+    static LOCK: Mutex<()> = Mutex::new(());
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(home) = dirs::home_dir() else { return };
+    let file = home.join(".claude.json");
+    let mut v: Value = match std::fs::read_to_string(&file) {
+        Ok(s) => match serde_json::from_str(&s) {
+            Ok(v) => v,
+            Err(_) => return,
+        },
+        Err(_) => serde_json::json!({}),
+    };
+    let Some(root) = v.as_object_mut() else { return };
+    let projects = root.entry("projects").or_insert_with(|| serde_json::json!({}));
+    let Some(projects) = projects.as_object_mut() else { return };
+    let p = projects.entry(trust_key(dir)).or_insert_with(|| serde_json::json!({}));
+    let Some(p) = p.as_object_mut() else { return };
+    if p.get("hasTrustDialogAccepted") == Some(&Value::Bool(true)) {
+        return;
+    }
+    p.insert("hasTrustDialogAccepted".into(), Value::Bool(true));
+    if let Ok(s) = serde_json::to_string_pretty(&v) {
+        let _ = crate::util::atomic_write(&file, s.as_bytes());
+    }
+}
+
+/// How Claude Code spells a folder: forward slashes, no trailing slash.
+fn trust_key(dir: &Path) -> String {
+    let s = dir.display().to_string().replace('\\', "/");
+    let s = s.strip_prefix("//?/").unwrap_or(&s).to_string();
+    if s.len() > 1 { s.trim_end_matches('/').to_string() } else { s }
+}
+
 pub fn command(path: &Path) -> Command {
     // A .cmd has to go through the shell on Windows.
     if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("cmd")) {
@@ -82,6 +118,7 @@ fn friendly(text: &str) -> String {
 pub fn stream(cfg: &Config, req: &Request, on_delta: &mut dyn FnMut(&str), cancel: &AtomicBool) -> Result<Reply, String> {
     let exe = find(cfg).ok_or("Claude Code wasn't found on this computer. Install it from Settings, set its location there, or switch to an API key.")?;
     std::fs::create_dir_all(&req.workdir).map_err(|e| e.to_string())?;
+    trust(&req.workdir);
     let sys = req.workdir.join("gm_system_prompt.md");
     std::fs::write(&sys, req.system.join("\n\n")).map_err(|e| e.to_string())?;
 
@@ -230,6 +267,7 @@ pub fn once(cfg: &Config, model: &str, system: &str, user: &str) -> Result<Strin
     let exe = find(cfg).ok_or("Claude Code wasn't found")?;
     let dir = crate::config::local_dir().join("helper");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    trust(&dir);
     let sys = dir.join(format!("system-{}.md", std::process::id()));
     std::fs::write(&sys, system).map_err(|e| e.to_string())?;
     let mut cmd = command(&exe);
@@ -276,12 +314,25 @@ pub fn install() -> Result<String, String> {
 /// Open a visible terminal running Claude Code, so the player can sign in.
 pub fn sign_in(cfg: &Config) -> Result<(), String> {
     let exe = find(cfg).ok_or("Claude Code wasn't found")?;
+    // Sign in from the app's own folder, already trusted, so the first thing it shows is the sign-in.
+    let dir = crate::config::local_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    trust(&dir);
     let res = if cfg!(windows) {
-        Command::new("cmd").args(["/C", "start", "Claude Code", "cmd", "/K"]).arg(&exe).spawn()
+        Command::new("cmd").current_dir(&dir).args(["/C", "start", "Claude Code", "cmd", "/K"]).arg(&exe).spawn()
     } else if cfg!(target_os = "macos") {
         Command::new("osascript").args(["-e", &format!("tell app \"Terminal\" to do script \"{}\"", exe.display())]).spawn()
     } else {
-        Command::new("x-terminal-emulator").arg("-e").arg(&exe).spawn()
+        Command::new("x-terminal-emulator").current_dir(&dir).arg("-e").arg(&exe).spawn()
     };
     res.map(|_| ()).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn folders_are_spelled_the_way_claude_code_does() {
+        assert_eq!(super::trust_key(std::path::Path::new(r"C:\Users\a\Campaign Keeper\")), "C:/Users/a/Campaign Keeper");
+        assert_eq!(super::trust_key(std::path::Path::new("/home/a/games")), "/home/a/games");
+    }
 }
