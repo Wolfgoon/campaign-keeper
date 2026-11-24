@@ -11,20 +11,20 @@ meSpeak.loadVoice(enUS);
 
 /** The ten character voices. `id` is what the GM writes in voice="…". */
 export const VOICES = [
-  { id: "Abel", gender: "male", about: "deep, steady", variant: "m4", pitch: 30 },
-  { id: "Bram", gender: "male", about: "rough, gravelly", variant: "m1", pitch: 38 },
-  { id: "Cass", gender: "male", about: "plain, even", variant: "m3", pitch: 45 },
-  { id: "Dov", gender: "male", about: "warm, echoing", variant: "m2", pitch: 50 },
-  { id: "Edge", gender: "male", about: "light, quick", variant: "m6", pitch: 58 },
-  { id: "Fay", gender: "female", about: "low, calm", variant: "f4", pitch: 40 },
-  { id: "Gwen", gender: "female", about: "clear, bright", variant: "f1", pitch: 50 },
-  { id: "Hana", gender: "female", about: "soft, breathy", variant: "f2", pitch: 55 },
-  { id: "Isla", gender: "female", about: "crisp, firm", variant: "f3", pitch: 48 },
-  { id: "Juno", gender: "female", about: "high, airy", variant: "f5", pitch: 65 },
+  { id: "1m", gender: "male", about: "deep, steady", variant: "m4", pitch: 30 },
+  { id: "2m", gender: "male", about: "rough, gravelly", variant: "m1", pitch: 38 },
+  { id: "3m", gender: "male", about: "plain, even", variant: "m3", pitch: 45 },
+  { id: "4m", gender: "male", about: "warm, echoing", variant: "m2", pitch: 50 },
+  { id: "5m", gender: "male", about: "light, quick", variant: "m6", pitch: 58 },
+  { id: "1f", gender: "female", about: "low, calm", variant: "f4", pitch: 40 },
+  { id: "2f", gender: "female", about: "clear, bright", variant: "f1", pitch: 50 },
+  { id: "3f", gender: "female", about: "soft, breathy", variant: "f2", pitch: 55 },
+  { id: "4f", gender: "female", about: "crisp, firm", variant: "f3", pitch: 48 },
+  { id: "5f", gender: "female", about: "high, airy", variant: "f5", pitch: 65 },
 ] as const;
 
 const NARRATOR = { variant: "", pitch: 55 };
-const KEY = "ck-cast2";
+const KEY = "ck-cast3";
 
 function loadCast(): Record<string, string> {
   try {
@@ -111,7 +111,7 @@ export function stopSpeaking() {
 export function sample(id: string) {
   stopSpeaking();
   const v = VOICES.find((x) => x.id === id);
-  if (v) say(`I am ${v.id}.`, v.variant, v.pitch, 1);
+  if (v) say(`This is voice ${v.id}.`, v.variant, v.pitch, 1);
 }
 
 /** Speak one reply: narration in the narrator's voice, tagged lines in the characters'. */

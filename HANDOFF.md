@@ -964,9 +964,9 @@ the `75a5d9b0…` file is the one shipped).
 
 - **Read aloud ships its own voice engine** (`mespeak`, eSpeak in JS, in `app/src/lib/voice.svelte.ts`), so it no
   longer depends on the computer's voices. The narrator is one flat voice (SSML `prosody range="x-low"`, mid pitch,
-  no gendered variant). Characters get one of ten fixed voices: Abel, Bram, Cass, Dov, Edge (male) and Fay, Gwen,
-  Hana, Isla, Juno (female). The list is in `running_inside.md`, so the GM casts with `voice="Gwen"`. The cast is
-  kept in localStorage `ck-cast2`, and the Voices panel can change and preview them. Playback goes through one
+  no gendered variant). Characters get one of ten fixed voices, numbered 1m-5m (male) and 1f-5f (female) with a short
+  description each. The list is in `running_inside.md`, so the GM casts with `voice="2f"`. The cast is
+  kept in localStorage `ck-cast3`, and the Voices panel can change and preview them. Playback goes through one
   AudioContext queue, so Stop really stops.
 - **Claude Code never asks "trust this folder?"**: `claude_code::trust(dir)` sets `hasTrustDialogAccepted` in
   `~/.claude.json` (forward-slash keys) for every folder the app runs it in, including the sign-in terminal, which
