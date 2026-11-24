@@ -1,8 +1,8 @@
-# Handoff: Campaign Keeper (Windows and Android 3.1.2; AI Game Master, AD System, serverless multiplayer)
+# Handoff: Campaign Keeper (Windows, Android, Mac and Linux 3.1.2; AI Game Master, AD System, serverless multiplayer)
 
 Repo: `C:\Users\patri\OneDrive\Documents\GitHub\campaign-keeper` (Tauri 2 + Svelte 5 + Rust). Windows, PowerShell.
 Everything described here is committed and pushed to `main` except the 3.0.8, 3.1.0, 3.1.1 and 3.1.2 work at the
-end of this file (latest version: **3.1.2 for Windows and Android**). Start with **Still to do** at the
+end of this file (latest version: **3.1.2 for Windows, Android, Mac and Linux**). Start with **Still to do** at the
 bottom of the version sections.
 
 ## What was done
@@ -888,3 +888,74 @@ reports 3.1.2 / 3001002, and it launched.
 - **AD clock**: an exchange is 10 seconds (`World::tick`) unless the reply has `rest`/`regen`; skips over 10 minutes need
   `| reason`.
 - Welcome screen: two columns on computers (actions left, campaign cards right).
+
+## 3.1.2 for Mac and Linux, the last two that were behind (2026-11-22)
+
+Both were stuck at 1.0.5 while Windows and Android went to 3.1.2. They are now built from the same sources as
+the 3.1.2 exe and APK, so a table can mix every platform again (`net::PROTOCOL` is still **3**, no schema
+change, nothing to migrate).
+
+**Mac — `installers/Campaign Keeper 3.1.2.dmg`** — 18,960,717 bytes, SHA-256
+`9341b6246611e6cc15f01788a44f78ea06efe93b680d37e7ed796678fe681333`, built on the Mac with
+`cd app; npx tauri build --target universal-apple-darwin --bundles dmg` and copied from
+`app/src-tauri/target/release/bundle/dmg/Campaign Keeper_3.1.2_universal.dmg`. Checked after mounting it:
+`lipo -archs` says `x86_64 arm64` (one file for Apple Silicon and Intel), `CFBundleShortVersionString` is
+**3.1.2**, the identifier is `com.wolfgoon.campaign-keeper`, and `LSMinimumSystemVersion` is **11.0**. A copy was
+dragged out and launched: the window opened and the app stayed up (Settings found `claude` at
+`/usr/local/bin/claude` in the first build of the day), and it quit without a crash. Unsigned like the exe, so the
+first open needs **Done** → System Settings → Privacy & Security → **Open Anyway** (already what the docs say).
+`bundle.macOS.minimumSystemVersion` is new in `app/src-tauri/tauri.conf.json`: Tauri's default is 10.13, which
+would have let a Catalina Mac install a build the README only promises from 11.0 up, so the DMG above was rebuilt
+after setting it (the first 3.1.2 dmg, `3df72c36…a63e6`, declared 10.13 and is superseded).
+
+**Linux / Steam Deck — `installers/Campaign Keeper 3.1.2 (Linux & Steam Deck).AppImage`** — 88,721,912 bytes,
+SHA-256 `75a5d9b0fca29f980ddcfe116a3d8cfbeb47fde2d4cf67b5e37b89f69ae96434`, x86-64 (the first one built for
+this release was `9a1b22a6…2451a56a` — same size, same BuildID `ef655b05…`, different squashfs timestamps;
+the `75a5d9b0…` file is the one shipped).
+
+- **It cannot be built on this Mac.** A Tauri AppImage is built by linuxdeploy out of the *host's* own GTK and
+  WebKit, so it needs a Linux machine; cross-compiling it is not a thing. It was built on GitHub's runners
+  instead, with the new `.github/workflows/linux.yml` (Actions → **Linux build** → **Run workflow**), which
+  pins `ubuntu-22.04` and not `ubuntu-latest` on purpose: 22.04's glibc 2.35 is old enough for every SteamOS 3.x,
+  Debian 12 and Ubuntu 22.04+, while a 24.04 build would refuse to start on all of them.
+- **Nothing has to be installed on the Deck.** Tauri's bundler copies the whole stack into the file, and that was
+  checked rather than assumed: unpacked, `usr/lib` holds `libwebkit2gtk-4.1.so.0`,
+  `libjavascriptcoregtk-4.1.so.0`, `libsoup-3.0.so.0`, `libgtk-3.so.0`, GLib/GIO, Pango, Cairo, librsvg, the
+  gdk-pixbuf loaders and the input modules, and `ldd usr/bin/campaign-keeper` resolves every one of them to
+  `../lib`, leaving only glibc, libgcc, libm and the Mesa GL libraries to the system. (The old 2.0.7 AppImage
+  bundles its stack the same way, which is why it was 103 MB.)
+- **It was started with no webkit2gtk on the machine**, which is the Deck's situation: on a clean `ubuntu-22.04`
+  runner with `libfuse2`, Xvfb and Mesa (`libegl1 libgl1 libgles2 libgbm1 libglx-mesa0 libgl1-mesa-dri`) and
+  **no** `libwebkit2gtk-4.1-0`, the AppImage mounted, opened a window titled `Campaign Keeper` within 2 s and
+  drew the welcome screen at 1280x800 (the Deck's own resolution) with the icon, the three buttons and Settings —
+  the only output on the console was the usual `AT-SPI` accessibility warning. Reproduced twice.
+- **The two failures on the way there are worth knowing:** without Mesa the app dies at once with
+  `error while loading shared libraries: libEGL.so.1`; with `libegl1`/`libgl1` but no `libgles2` the window
+  appears and stays blank, and the log says `Couldn't open libGLESv2.so.2`. SteamOS ships all of Mesa for Steam
+  itself, so a Deck has them, but a bare container (or a distro with no GL) needs `libegl1 libgl1 libgles2`.
+  If a future build ever *does* need system WebKitGTK, SteamOS 3.7's `extra` repo has `webkit2gtk-4.1` and
+  `fuse2`, so it would be `sudo steamos-readonly disable && sudo pacman -S --needed webkit2gtk-4.1 fuse2`
+  (the read-only switch resets on every SteamOS update, which is the argument for keeping it bundled).
+- **How it was built, and the tidying.** Because the build had to happen on a runner but the answer was needed
+  here, a temporary branch `linux-build` carried a throwaway workflow that built the AppImage, committed it back
+  to that branch and then (second pass) unpacked it, `ldd`-ed it, ran it under Xvfb and took the screenshot. The
+  branch and both temporary workflows are deleted; what stays is `linux.yml` (manual, artifact only) and
+  `app/build-linux.sh` (the same build on a Linux box or on the Deck itself in Desktop Mode). Both now write
+  `installers/Campaign Keeper <version> (Linux & Steam Deck).AppImage`, the name the shipped file has.
+- **Why the file comes from the runner and not from this Mac.** `git push` of the 88 MB AppImage from here dies
+  after a minute with `RPC failed; HTTP 408 curl 22 The requested URL returned error: 408` (19 MB went up in 37 s,
+  so it is the size of the upload, not the credentials; there are no SSH keys on this machine either, and raising
+  `http.postBuffer`/`lowSpeedTime` changed nothing). So the release file was produced by a second temporary
+  workflow on a throwaway `push-test` branch: build → commit the AppImage back → a second job unpacked *that* file,
+  ran it with no webkit2gtk and photographed it — which is where the numbers above come from. The blob was then
+  `git reset --hard` into `main`, so publishing it only had to carry trees and commits. To do it again: push the
+  docs and the other files first, let the runner add the AppImage, then reset `main` onto that branch.
+- **Docs.** `README.md`'s table and install list and `How to install.txt` now name the dmg and the AppImage for
+  3.1.2, say the Mac file is universal, and describe the AppImage as one file that needs nothing installed
+  (right-click → Properties → Permissions → **Is executable**, or `chmod +x`; `Games → Add a Non-Steam Game`
+  for Steam; `--appimage-extract-and-run` if a system without FUSE 2 won't mount it).
+- **Still to do:** run it on the Deck itself — Desktop Mode, tick **Is executable**, double-click — which is the
+  one check a Linux runner can't make (Game Mode needs it added as a non-Steam game first, and a mouse and
+  keyboard or the on-screen keyboard). After that, `installers/Campaign Keeper 1.0.5.dmg`,
+  `Campaign Keeper 1.0.5 (Linux & Steam Deck).tar.gz` and `Campaign Keeper 2.0.7.*` are superseded and can be
+  deleted in a commit of their own.
