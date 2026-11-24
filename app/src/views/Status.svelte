@@ -1,6 +1,13 @@
 <script lang="ts">
   import { call, toast } from "../lib/api";
 
+  // "Bruised ribs (-2 to dodge until healed)" shows as "Bruised ribs"; the brackets are on hover.
+  function split(t: string): [string, string] {
+    const bits: string[] = [];
+    const name = String(t ?? "").replace(/\s*[([{]([^)\]}]*)[)\]}]/g, (_, x) => (bits.push(x.trim()), "")).trim();
+    return [name || String(t), bits.filter(Boolean).join("; ")];
+  }
+
   // `rules` is the host's full state; a player at someone's table gets just `sheet`, read-only.
   // `only` keeps a host who is playing a character at their own table to that one sheet; a null
   // `only` means no limit (the GM reading every sheet).
@@ -70,6 +77,9 @@
     }
   }
 </script>
+
+<!-- Phones can't hover: a tap on an underlined entry shows its details. -->
+<svelte:document onclick={(e) => { const el = (e.target as HTMLElement)?.closest?.(".has-more"); if (el?.getAttribute("title")) toast(el.getAttribute("title")); }} />
 
 {#if !readOnly && !rules?.enabled}
   <div class="col">
@@ -159,11 +169,11 @@
           </div>
         {/if}
 
-        {#if s.conditions.length}<div class="sect"><b>{N(s, "conditions")}</b><ul>{#each s.conditions as c}<li>{c}</li>{/each}</ul></div>{/if}
+        {#if s.conditions.length}<div class="sect"><b>{N(s, "conditions")}</b><ul>{#each s.conditions as c}{@const [n, more] = split(c)}<li class:has-more={!!more} title={more || undefined}>{n}</li>{/each}</ul></div>{/if}
 
         <div class="sect"><b>{N(s, "inventory")}</b> <span class="small">({s.money} {N(s, "money").toLowerCase()})</span>
           {#if !s.inventory.length}<div class="small">Empty.</div>{/if}
-          <ul>{#each s.inventory as i}<li title={i.about}>{i.name}{i.qty > 1 ? ` x${i.qty}` : ""}</li>{/each}</ul>
+          <ul>{#each s.inventory as i}{@const [n, more] = split(i.name)}<li class:has-more={!!(more || i.about)} title={[more, i.about].filter(Boolean).join(" · ") || undefined}>{n}{i.qty > 1 ? ` x${i.qty}` : ""}</li>{/each}</ul>
         </div>
       </div>
     {/each}
@@ -235,7 +245,7 @@
 
         {#if s.conditions.length}
           <div class="sect"><b>Conditions</b>
-            <ul>{#each s.conditions as c}<li>{c.name} ({c.modifier > 0 ? "+" : ""}{c.modifier})</li>{/each}</ul>
+            <ul>{#each s.conditions as c}{@const [n, more] = split(c.name)}<li class="has-more" title={[more, `${c.modifier > 0 ? "+" : ""}${c.modifier} to every check while it lasts`].filter(Boolean).join(" · ")}>{n}</li>{/each}</ul>
           </div>
         {/if}
 
@@ -243,7 +253,8 @@
           {#if !s.inventory.length}<div class="small">Empty.</div>{/if}
           <ul>
             {#each s.inventory as i}
-              <li>{i.name}{i.qty > 1 ? ` x${i.qty}` : ""}
+              {@const [n, more] = split(i.name)}
+              <li class:has-more={!!more} title={more || undefined}>{n}{i.qty > 1 ? ` x${i.qty}` : ""}
                 {#each Object.entries(i.bonuses ?? {}) as [k, b]}<span class="why"> {(b as number) > 0 ? "+" : ""}{b} {k}</span>{/each}
               </li>
             {/each}

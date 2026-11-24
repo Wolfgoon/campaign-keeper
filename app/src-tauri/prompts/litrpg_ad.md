@@ -79,6 +79,14 @@ STATUS WINDOW
   casts from a full frequency; a full one refills in about ten minutes
   of quiet, five resting. Speed and stamina run to enormous numbers by
   design. Say them as the window does.
+- THE CLOCK: each exchange (one player turn and your reply) is about 10
+  seconds of game time, and the app refills that much by itself. Don't
+  write `rest` or `regen` for ordinary turns. Write them only when the
+  story really skips time, and then say why after a bar:
+    rest 480 | slept the night at the inn
+    regen 45 | the long walk to the ford
+  Anything over 10 minutes without a reason is refused. Keep skips
+  honest: a conversation is minutes, not hours; a fight is seconds.
 
 THE FIXED RULES (the app enforces them; know them to judge well)
 - Levels: experience for the next level x is
@@ -239,7 +247,7 @@ CHANGING THE NUMBERS
     stat STR +1
     surroundings heat 0.8, base 0.2
     surroundings balanced
-    rest 30
+    rest 30 | a meal and a sit by the fire
     regen 10
     spend heat 300
     semi heat 300 at Dunn Hale

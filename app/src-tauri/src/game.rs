@@ -384,8 +384,9 @@ fn run_turn(app: &AppHandle, st: &Shared, p: &Pending) -> Result<(), String> {
     let parsed = tags::parse(&reply.text);
     // Painting is slow, so it happens before the state is locked.
     let painted = paint_pictures(app, st, &cfg, &parsed);
-    // An out-of-character answer is talk about the game, not a turn in it: nothing it says may
-    // change a sheet, open an activity, store a save or teach the memory anything.
+    // An out-of-character answer is talk about the game, not a turn in it: it may not open an
+    // activity, store a save or teach the memory anything. It may keep the books, though: when the
+    // player asks to fix the inventory, money or condition, its <rpg> lines apply.
     let ooc = is_ooc(&p.text);
     let mut s = st.lock().map_err(|_| "state lost")?;
     let mut entry = Entry::text("assistant", &reply.text);
@@ -425,6 +426,9 @@ fn run_turn(app: &AppHandle, st: &Shared, p: &Pending) -> Result<(), String> {
             }
         }
         apply_rpg(&dir, &mut s, &parsed, &mut entry, &p.actions)?;
+    } else if !parsed.rpg_lines.is_empty() || parsed.rpg_sheet.is_some() {
+        // Bookkeeping asked for out of character.
+        apply_rpg(&dir, &mut s, &parsed, &mut entry, &p.actions)?;
     }
     if reply.truncated {
         note(app, "Cut off: this reply hit the output limit (see Settings).");
@@ -445,6 +449,12 @@ fn run_turn(app: &AppHandle, st: &Shared, p: &Pending) -> Result<(), String> {
     drop(s);
 
     emit(app, "entry", json!({ "seconds": t0.elapsed().as_secs_f32() }));
+    if cfg.tilemap_enabled && !ooc {
+        redraw_tilemap(app, &cfg, &dir, player.clone(), parsed.display.clone());
+    }
+    if cfg.ledger_auto && !ooc && !p.private {
+        ledger_check(app, st, &cfg, &dir);
+    }
     if cfg.memory_enabled && !p.private && !ooc {
         after_turn(app, st, &cfg, &dir, player, parsed.display, last_user_idx);
     }
@@ -470,6 +480,10 @@ decide which stands. For a confirmation, say what is definitely true, then what 
 then what nobody knows yet. For more detail, be concrete and specific: sizes, distances, colours,
 sounds, smells, textures, names, what can be used. When the player next acts without a \"?\", the
 story resumes exactly where it stood.
+BOOKKEEPING: if the player asks you to fix, record or correct their status (inventory, money,
+health, conditions, notes, an item they forgot to add, a sale that wasn't counted), do it with
+<rpg> lines exactly as in play, checked against the <status_window>, and say in one plain line what
+you changed. Only what they asked for or plainly agreed to: no rewards, XP or new events.
 </out_of_character>";
 
 /// Recall, referee, rules, and the player's message with what they produced.
@@ -538,7 +552,8 @@ fn compose_user_turn(app: &AppHandle, st: &Shared, p: &Pending, cfg: &Config, di
     for e in errors {
         note(app, &format!("Check skipped: {e}"));
     }
-    if s.rules.enabled && s.rules.has_sheets() && !is_ooc {
+    // Out of character too: "what do I have?" and "fix my inventory" both need the sheet.
+    if s.rules.enabled && s.rules.has_sheets() {
         blocks.push(format!("<status_window>\n{}\n</status_window>", s.rules.status_all()));
     }
     // The rules came on after the story had begun: the words on the sheet were never fitted to this
@@ -757,6 +772,10 @@ fn apply_rpg(dir: &Path, s: &mut State, parsed: &tags::Parsed, entry: &mut Entry
                 Err(e) => s.session.rpg_notices.push(format!("Refused: {line} ({e})")),
             }
         }
+        // The clock: an exchange is ten seconds unless the GM moved time itself this reply.
+        if !parsed.rpg_lines.iter().any(|l| crate::ad::moves_clock(l)) {
+            s.rules.ad.tick();
+        }
         rpg::save(dir, &s.rules)?;
         if !changes.is_empty() {
             entry.rpg = Some(json!({ "changes": changes }));
@@ -820,6 +839,55 @@ fn unnamed_refusal(rules: &Rules, line: &str, default: &str) -> Option<String> {
     let mut names = rules.names();
     names.sort();
     Some(if names.is_empty() { "no character sheets yet".to_string() } else { format!("say whose it is: {} (or all: for everyone)", names.join(", ")) })
+}
+
+/// The picture map, off the player's turn: a helper model redraws it from the GM's reply.
+fn redraw_tilemap(app: &AppHandle, cfg: &Config, dir: &Path, player: String, gm: String) {
+    let (app, cfg, dir) = (app.clone(), cfg.clone(), dir.to_path_buf());
+    std::thread::spawn(move || {
+        match crate::tilemap::update(&cfg, &dir, &player, &gm) {
+            Ok((n, _)) if n > 0 => emit(&app, "tilemap", json!(null)),
+            Ok(_) => {}
+            Err(e) => note(&app, &format!("The picture map wasn't updated: {e}")),
+        }
+        art_pieces(&app, &cfg, &dir);
+        emit(&app, "tilemap_done", json!(null));
+    });
+}
+
+/// Every few exchanges the Ledger looks over them and proposes status fixes for the player to apply.
+fn ledger_check(app: &AppHandle, st: &Shared, cfg: &Config, dir: &Path) {
+    let (rules, story) = {
+        let Ok(s) = st.lock() else { return };
+        let turns = s.session.entries.iter().filter(|e| e.role == "assistant" && !e.extra.contains_key("ooc") && !e.extra.contains_key("private")).count();
+        if !s.rules.enabled || !s.rules.has_sheets() || turns == 0 || turns % crate::ledger::AUTO_EVERY != 0 {
+            return;
+        }
+        (s.rules.clone(), crate::ledger::story(&s.session.entries, crate::ledger::AUTO_EVERY * 2 + 2))
+    };
+    let (app, cfg, dir) = (app.clone(), cfg.clone(), dir.to_path_buf());
+    std::thread::spawn(move || match crate::ledger::auto(&cfg, &dir, &rules, &story) {
+        Ok(true) => emit(&app, "ledger", json!(null)),
+        Ok(false) => {}
+        Err(e) => note(&app, &format!("The Ledger's check was skipped: {e}")),
+    });
+}
+
+/// The map's art, drawn by a model piece by piece; the page reloads after each one.
+pub fn fill_tileart(app: &AppHandle, cfg: &Config, dir: &Path) {
+    let (app, cfg, dir) = (app.clone(), cfg.clone(), dir.to_path_buf());
+    std::thread::spawn(move || {
+        art_pieces(&app, &cfg, &dir);
+        emit(&app, "tilemap_done", json!(null));
+    });
+}
+
+fn art_pieces(app: &AppHandle, cfg: &Config, dir: &Path) {
+    let mut fails = Vec::new();
+    crate::tileart::fill(cfg, dir, |_| emit(app, "tilemap", json!(null)), |n, e| fails.push(format!("{n}: {e}")));
+    if !fails.is_empty() {
+        note(app, &format!("Some map art couldn't be drawn ({}). Map > Redraw art tries again.", crate::util::clip(&fails.join("; "), 200)));
+    }
 }
 
 /// The slow memory work, off the player's turn. None of it blocks the next action.

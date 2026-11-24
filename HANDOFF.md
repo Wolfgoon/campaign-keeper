@@ -863,3 +863,28 @@ reports 3.1.2 / 3001002, and it launched.
   a symlink error).
 - **Still to do:** commit and push; delete `installers/Campaign Keeper Setup 3.0.7.exe` and the superseded APKs
   once 3.0.8–3.1.2 are on `main`.
+
+## 3.1.3: the picture map (Windows and Android)
+- New **Map** tab (`views/MapTab.svelte`, `views/TileMap.svelte`): a 64x64 grid of 64x64 pixel-art tiles with tokens,
+  a "📍 place" banner, a "what's happening" line, and a 🔔 list of the GM's non-visual points. Players at a table get
+  it in their Map side panel through the table snapshot (`"tilemap"`).
+- `tilemap.rs`: after every non-OOC reply, `engine::helper` (Haiku / Gemini Flash) gets the map and the reply and answers
+  with commands (`new`, `area`, `fill`, `line`, `circle`, `put`, `token`, `move`, `remove`, `label`, `now`, `note`).
+  Prompt: `prompts/tilemap.md`. Each area is kept apart in `.keeper/tilemaps/`. Setting: `tilemap_enabled` (on).
+  Not covered by /undo.
+- `tileart.rs`: every tile and token kind (28 pieces) is drawn by a model for each campaign, styled after its
+  world overview: `art::paint` when an image service is set up (cropped square), otherwise an SVG from the helper.
+  Both go through `pixel` k-means (16 colours, 64px). Kept in `.keeper/tileset/`, and the 🎨 button redraws it all.
+- Named tokens get their own sprite once (`.keeper/tileset/t_<slug>.png`, from their campaign file), shared with players.
+  The table sends the tile map only when `tilemap::stamp` changes, and syncs on `tilemap_done` (once per batch).
+- **Minigames** (`views/Minigame.svelte`): lockpick, dice, combo, choose, haggle, sequence, aim, arrange, memory.
+  `tags.rs` gathers `- word: value` lines into `lists`. Fixed: `.activity textarea` covered the whole crafting tab.
+- **OOC bookkeeping**: `?` replies may apply `<rpg>` lines and see the status window (📒 Books preset).
+- **Ledger** (`ledger.rs`, `views/Ledger.svelte`, Host → 📒 Ledger): a status-only chat with the main model that proposes
+  `<rpg>` lines; Apply/Discard; the GM gets an rpg_notice. Auto-check every 3 exchanges (`ledger_auto`), shown in
+  `LedgerDock.svelte` (bottom-left of Play).
+- Conditions match by name, ignoring brackets (`rpg::cond_key`, `find_condition`); a miss is refused instead of a false
+  "Cleared". The sheet shows bracketed detail on hover / tap.
+- **AD clock**: an exchange is 10 seconds (`World::tick`) unless the reply has `rest`/`regen`; skips over 10 minutes need
+  `| reason`.
+- Welcome screen: two columns on computers (actions left, campaign cards right).

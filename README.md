@@ -6,8 +6,8 @@ A desktop app for playing tabletop-style campaigns with an AI Game Master: Claud
 
 | Your computer | Download |
 |---|---|
-| Windows 10 or 11 (64-bit) | [Campaign Keeper Setup 3.1.2.exe](https://github.com/Wolfgoon/campaign-keeper/raw/main/installers/Campaign%20Keeper%20Setup%203.1.2.exe) (version 3.1.2) |
-| Android phone or tablet (Android 7+) | [Campaign Keeper 3.1.2 (Android).apk](https://github.com/Wolfgoon/campaign-keeper/raw/main/installers/Campaign%20Keeper%203.1.2%20%28Android%29.apk) (version 3.1.2) |
+| Windows 10 or 11 (64-bit) | [Campaign Keeper Setup 3.1.3.exe](https://github.com/Wolfgoon/campaign-keeper/raw/main/installers/Campaign%20Keeper%20Setup%203.1.3.exe) (version 3.1.3) |
+| Android phone or tablet (Android 7+) | [Campaign Keeper 3.1.3 (Android).apk](https://github.com/Wolfgoon/campaign-keeper/raw/main/installers/Campaign%20Keeper%203.1.3%20%28Android%29.apk) (version 3.1.3) |
 | iPhone, iPad, or anything else with a web browser | Nothing to download for joining a friend's game: see **Joining without the app** below |
 | Mac (Apple Silicon or Intel, macOS 11+) | [Campaign Keeper 1.0.5.dmg](https://github.com/Wolfgoon/campaign-keeper/raw/main/installers/Campaign%20Keeper%201.0.5.dmg) (version 1.0.5; 2.x coming) |
 | Linux or Steam Deck (Desktop Mode) | [Campaign Keeper 1.0.5 (Linux & Steam Deck).tar.gz](https://github.com/Wolfgoon/campaign-keeper/raw/main/installers/Campaign%20Keeper%201.0.5%20%28Linux%20%26%20Steam%20Deck%29.tar.gz) (version 1.0.5; 2.x coming) |

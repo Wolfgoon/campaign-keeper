@@ -12,6 +12,7 @@
   import Host from "./views/Host.svelte";
   import Settings from "./views/Settings.svelte";
   import Client from "./views/Client.svelte";
+  import MapTab from "./views/MapTab.svelte";
 
   let cfg = $state<any>(null);
   let campaign = $state<{ path: string; name: string } | null>(null);
@@ -32,7 +33,7 @@
   // The story, the party and their notes are the whole table's. Host-only tools sit behind one tab.
   // On a phone the bar shows just the icons (see app.css): five words plus Close don't fit.
   const TABS = [
-    ["overview", "🏠", "Overview"], ["play", "▶", "Play"], ["party", "👥", "Party"], ["host", "🛠", "Host"],
+    ["overview", "🏠", "Overview"], ["play", "▶", "Play"], ["map", "🗺", "Map"], ["party", "👥", "Party"], ["host", "🛠", "Host"],
   ];
 
   // Where the Host tab was last left, so "Scribe" in Play opens the Scribe, not the table.
@@ -204,6 +205,7 @@
       <!-- Play stays mounted so a reply keeps streaming while you read a file. -->
       <div class="view" style:display={tab === "play" ? "flex" : "none"}><Play {cfg} save={saveCfg} {go} /></div>
       {#if tab === "overview"}<Overview {go} />
+      {:else if tab === "map"}<MapTab />
       {:else if tab === "party"}<Party {go} />
       {:else if tab === "host"}<Host {cfg} bind:part={hostPart} />
       {/if}

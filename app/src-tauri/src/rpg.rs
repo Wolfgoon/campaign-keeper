@@ -167,6 +167,47 @@ fn norm(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
 }
 
+/// A condition's name for matching: what's in brackets is detail ("Bruised ribs (-2 until healed)"
+/// is "bruised ribs"), as are a trailing modifier and punctuation.
+pub fn cond_key(s: &str) -> String {
+    let mut out = String::new();
+    let mut depth = 0i32;
+    for c in s.chars() {
+        match c {
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth = (depth - 1).max(0),
+            _ if depth == 0 => out.push(c),
+            _ => {}
+        }
+    }
+    let words: Vec<&str> = out.split_whitespace().collect();
+    let words = match words.last() {
+        Some(w) if words.len() > 1 && w.trim_start_matches(['+', '-', '−']).parse::<i32>().is_ok() => &words[..words.len() - 1],
+        _ => &words[..],
+    };
+    words.join(" ").trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase()
+}
+
+/// Which condition a removal means: the same name, or else the only one that starts with or
+/// contains it. A miss names what they do have, so the GM (or the Ledger) can try again.
+pub fn find_condition<'a>(have: impl Iterator<Item = &'a str>, want: &str) -> Result<usize, String> {
+    let have: Vec<&str> = have.collect();
+    let k = cond_key(want);
+    if k.is_empty() {
+        return Err("condition - needs a name".into());
+    }
+    if let Some(i) = have.iter().position(|h| cond_key(h) == k) {
+        return Ok(i);
+    }
+    let near: Vec<usize> = (0..have.len()).filter(|&i| { let h = cond_key(have[i]); h.starts_with(&k) || h.contains(&k) || k.contains(&h) }).collect();
+    match near.as_slice() {
+        [i] => Ok(*i),
+        [] if have.is_empty() => Err("they have no conditions".into()),
+        [] => Err(format!("no condition called {want}; they have: {}", have.join(", "))),
+        _ => Err(format!("'{want}' could mean {}; use the full name", near.iter().map(|&i| have[i]).collect::<Vec<_>>().join(" or "))),
+    }
+}
+
 impl Sheet {
     pub fn attribute(&self, name: &str) -> i32 {
         self.attributes.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map_or(10, |(_, v)| *v)
@@ -822,7 +863,7 @@ impl Rules {
             s.stamina.cur = (s.stamina.cur - st).max(0);
             out.push(format!("-{st} Stamina ({}/{})", s.stamina.cur, s.stamina.max));
         }
-        if !tier.succeeded() && !stakes.condition.trim().is_empty() && !s.conditions.iter().any(|c| norm(&c.name) == norm(&stakes.condition)) {
+        if !tier.succeeded() && !stakes.condition.trim().is_empty() && !s.conditions.iter().any(|c| cond_key(&c.name) == cond_key(&stakes.condition)) {
             s.conditions.push(Condition { name: stakes.condition.trim().into(), modifier: stakes.condition_modifier.clamp(-5, 0) });
             out.push(format!("Condition: {}", stakes.condition.trim()));
         }
@@ -955,15 +996,17 @@ pub fn apply_line(r: &mut Rules, line: &str, default_char: &str) -> Result<Strin
                         Some(m) => (words[..words.len() - 1].join(" "), m.clamp(-5, 2)),
                         None => (words.join(" "), -1),
                     };
-                    if !s.conditions.iter().any(|c| norm(&c.name) == norm(&name)) {
-                        s.conditions.push(Condition { name: name.clone(), modifier: m });
+                    match s.conditions.iter_mut().find(|c| cond_key(&c.name) == cond_key(&name)) {
+                        // The same condition again: the newer wording and number win.
+                        Some(c) => *c = Condition { name: name.clone(), modifier: m },
+                        None => s.conditions.push(Condition { name: name.clone(), modifier: m }),
                     }
                     format!("Condition: {name} ({m:+})")
                 }
                 "-" => {
-                    let name = rest2.trim();
-                    s.conditions.retain(|c| norm(&c.name) != norm(name));
-                    format!("Cleared: {name}")
+                    let i = find_condition(s.conditions.iter().map(|c| c.name.as_str()), rest2.trim())?;
+                    let gone = s.conditions.remove(i);
+                    format!("Cleared: {}", gone.name)
                 }
                 _ => return Err("condition needs + or -".into()),
             }
@@ -1448,6 +1491,20 @@ mod tests {
     }
 
     #[test]
+    fn conditions_match_by_name_not_their_details() {
+        let mut r = rules();
+        apply_line(&mut r, "condition + Bruised ribs (hurts to breathe) -2", "Wren").unwrap();
+        apply_line(&mut r, "condition + Soaked -1", "Wren").unwrap();
+        assert!(apply_line(&mut r, "condition - Bleeding", "Wren").unwrap_err().contains("Bruised ribs"));
+        assert_eq!(apply_line(&mut r, "condition - bruised", "Wren").unwrap(), "Wren: Cleared: Bruised ribs (hurts to breathe)");
+        apply_line(&mut r, "condition - Soaked (-1)", "Wren").unwrap();
+        assert!(r.sheets["Wren"].conditions.is_empty());
+        apply_line(&mut r, "condition + Tired -1", "Wren").unwrap();
+        apply_line(&mut r, "condition + Tired (badly) -3", "Wren").unwrap();
+        assert_eq!(r.sheets["Wren"].condition_total(), -3);
+    }
+
+    #[test]
     fn items_and_conditions_round_trip() {
         let mut r = rules();
         apply_line(&mut r, "item + Rope x3", "Wren").unwrap();
@@ -1468,6 +1525,29 @@ mod tests {
         assert_eq!(s.skills["Sword"].rank, 6);
         assert_eq!(s.inventory[0].bonuses["Sword"], 3);
         assert_eq!((s.attribute_points, s.skill_points), (0, 0));
+    }
+
+    #[test]
+    fn long_time_skips_need_a_reason_and_the_clock_knows_its_own_lines() {
+        let mut r = ad_rules();
+        assert!(r.apply("rest 200", "Wren").unwrap_err().contains("reason"));
+        assert!(r.apply("regen 5", "Wren").is_ok());
+        assert!(r.apply("rest 480 | slept at the inn", "Wren").unwrap().contains("slept at the inn"));
+        for l in ["rest 30 | food", "regen 5", "Wren: rest 10", "all: regen 2"] {
+            assert!(crate::ad::moves_clock(l), "{l}");
+        }
+        for l in ["item + Rope", "spend heat 300", "condition - Rested"] {
+            assert!(!crate::ad::moves_clock(l), "{l}");
+        }
+        r.ad.tick();
+    }
+
+    #[test]
+    fn ad_conditions_match_by_name_too() {
+        let mut r = ad_rules();
+        r.apply("condition + Bruised ribs (-2 to dodge until healed)", "Wren").unwrap();
+        assert_eq!(r.apply("condition - Bruised ribs", "Wren").unwrap(), "Wren: Cleared: Bruised ribs (-2 to dodge until healed)");
+        assert!(r.apply("condition - Bruised ribs", "Wren").is_err());
     }
 
     fn ad_rules() -> Rules {

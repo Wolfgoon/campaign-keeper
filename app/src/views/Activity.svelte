@@ -1,5 +1,8 @@
 <script lang="ts">
   import { safeSvg } from "../lib/api";
+  import Minigame from "./Minigame.svelte";
+
+  const GAMES = ["lockpick", "dice", "combo", "choose", "haggle", "sequence", "aim", "arrange", "memory"];
 
   // A hands-on tab the GM opened: drawing, crafting or writing. The result goes back as an action.
   let { a, submit, close } = $props();
@@ -65,7 +68,9 @@
   </div>
   <p class="muted" style="margin:4px 14px 0">{a.prompt}{a.tool ? ` · with ${a.tool}` : ""}</p>
 
-  {#if a.type === "drawing"}
+  {#if GAMES.includes(a.type)}
+    {#key a.id}<Minigame {a} done={(text: string) => submit(text, a.id)} />{/key}
+  {:else if a.type === "drawing"}
     <div class="surface" style:background={surface}>
       {#if a.art?.surface}<div class="art">{@html safeSvg(a.art.surface)}</div>{/if}
       <svg class="canvas" viewBox="0 0 480 320" preserveAspectRatio="none" role="img" aria-label="Drawing surface" bind:this={canvas} onpointerdown={down} onpointermove={move} onpointerup={() => (cur = null)}>
@@ -104,5 +109,7 @@
       <textarea bind:value={text} placeholder="Write it in your character's words…" aria-label="Your writing" style:color={inks[0]?.color} style:font-family={a.font === "mono" ? "var(--mono)" : undefined}></textarea>
     </div>
   {/if}
-  <div class="row" style="padding:0 14px 12px"><span class="grow"></span><button class="primary" onclick={send}>Send to the GM</button></div>
+  {#if !GAMES.includes(a.type)}
+    <div class="row" style="padding:0 14px 12px"><span class="grow"></span><button class="primary" onclick={send}>Send to the GM</button></div>
+  {/if}
 </div>

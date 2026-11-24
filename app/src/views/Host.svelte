@@ -4,6 +4,7 @@
   import Table from "./Table.svelte";
   import Files from "./Files.svelte";
   import Scribe from "./Scribe.svelte";
+  import Ledger from "./Ledger.svelte";
   import Memory from "./Memory.svelte";
   import Search from "./Search.svelte";
 
@@ -17,6 +18,7 @@
     ["table", "👥 Table"],
     ["files", "📁 Files"],
     ["scribe", "✏ Scribe"],
+    ["ledger", "📒 Ledger"],
     ["memory", "🧠 Memory"],
     ["search", "🔍 Search"],
   ];
@@ -51,6 +53,8 @@
       <Files />
     {:else if part === "scribe"}
       <Scribe {cfg} />
+    {:else if part === "ledger"}
+      <Ledger />
     {:else if part === "memory"}
       <Memory />
     {:else}
