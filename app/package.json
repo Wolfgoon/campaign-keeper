@@ -1,7 +1,7 @@
 {
   "name": "campaign-keeper",
   "private": true,
-  "version": "3.1.2",
+  "version": "3.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,7 +14,8 @@
     "@tauri-apps/plugin-dialog": "^2",
     "@tauri-apps/plugin-opener": "^2",
     "dompurify": "^3.2.0",
-    "marked": "^15.0.0"
+    "marked": "^15.0.0",
+    "mespeak": "^2.0.2"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5",

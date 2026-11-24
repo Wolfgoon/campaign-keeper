@@ -864,6 +864,31 @@ reports 3.1.2 / 3001002, and it launched.
 - **Still to do:** commit and push; delete `installers/Campaign Keeper Setup 3.0.7.exe` and the superseded APKs
   once 3.0.8–3.1.2 are on `main`.
 
+## 3.1.3: the picture map (Windows and Android)
+- New **Map** tab (`views/MapTab.svelte`, `views/TileMap.svelte`): a 64x64 grid of 64x64 pixel-art tiles with tokens,
+  a "📍 place" banner, a "what's happening" line, and a 🔔 list of the GM's non-visual points. Players at a table get
+  it in their Map side panel through the table snapshot (`"tilemap"`).
+- `tilemap.rs`: after every non-OOC reply, `engine::helper` (Haiku / Gemini Flash) gets the map and the reply and answers
+  with commands (`new`, `area`, `fill`, `line`, `circle`, `put`, `token`, `move`, `remove`, `label`, `now`, `note`).
+  Prompt: `prompts/tilemap.md`. Each area is kept apart in `.keeper/tilemaps/`. Setting: `tilemap_enabled` (on).
+  Not covered by /undo.
+- `tileart.rs`: every tile and token kind (28 pieces) is drawn by a model for each campaign, styled after its
+  world overview: `art::paint` when an image service is set up (cropped square), otherwise an SVG from the helper.
+  Both go through `pixel` k-means (16 colours, 64px). Kept in `.keeper/tileset/`, and the 🎨 button redraws it all.
+- Named tokens get their own sprite once (`.keeper/tileset/t_<slug>.png`, from their campaign file), shared with players.
+  The table sends the tile map only when `tilemap::stamp` changes, and syncs on `tilemap_done` (once per batch).
+- **Minigames** (`views/Minigame.svelte`): lockpick, dice, combo, choose, haggle, sequence, aim, arrange, memory.
+  `tags.rs` gathers `- word: value` lines into `lists`. Fixed: `.activity textarea` covered the whole crafting tab.
+- **OOC bookkeeping**: `?` replies may apply `<rpg>` lines and see the status window (📒 Books preset).
+- **Ledger** (`ledger.rs`, `views/Ledger.svelte`, Host → 📒 Ledger): a status-only chat with the main model that proposes
+  `<rpg>` lines; Apply/Discard; the GM gets an rpg_notice. Auto-check every 3 exchanges (`ledger_auto`), shown in
+  `LedgerDock.svelte` (bottom-left of Play).
+- Conditions match by name, ignoring brackets (`rpg::cond_key`, `find_condition`); a miss is refused instead of a false
+  "Cleared". The sheet shows bracketed detail on hover / tap.
+- **AD clock**: an exchange is 10 seconds (`World::tick`) unless the reply has `rest`/`regen`; skips over 10 minutes need
+  `| reason`.
+- Welcome screen: two columns on computers (actions left, campaign cards right).
+
 ## 3.1.2 for Mac and Linux, the last two that were behind (2026-11-22)
 
 Both were stuck at 1.0.5 while Windows and Android went to 3.1.2. They are now built from the same sources as
@@ -934,3 +959,18 @@ the `75a5d9b0…` file is the one shipped).
   keyboard or the on-screen keyboard). After that, `installers/Campaign Keeper 1.0.5.dmg`,
   `Campaign Keeper 1.0.5 (Linux & Steam Deck).tar.gz` and `Campaign Keeper 2.0.7.*` are superseded and can be
   deleted in a commit of their own.
+
+## 3.2.0: built-in voices, automatic Claude Code trust, drawn map tiles
+
+- **Read aloud ships its own voice engine** (`mespeak`, eSpeak in JS, in `app/src/lib/voice.svelte.ts`), so it no
+  longer depends on the computer's voices. The narrator is one flat voice (SSML `prosody range="x-low"`, mid pitch,
+  no gendered variant). Characters get one of ten fixed voices, numbered 1m-5m (male) and 1f-5f (female) with a short
+  description each. The list is in `running_inside.md`, so the GM casts with `voice="2f"`. The cast is
+  kept in localStorage `ck-cast3`, and the Voices panel can change and preview them. Playback goes through one
+  AudioContext queue, so Stop really stops.
+- **Claude Code never asks "trust this folder?"**: `claude_code::trust(dir)` sets `hasTrustDialogAccepted` in
+  `~/.claude.json` (forward-slash keys) for every folder the app runs it in, including the sign-in terminal, which
+  now opens in the app's own data folder.
+- **Map tiles are SVG drawings only.** The image service is no longer used for them. Natural ground gets 4
+  drawings (`grass`, `grass~1`…`~3`), each told to differ, and the page shows each in 4 orientations. A
+  `drawn-v2` marker clears old painted tilesets once.

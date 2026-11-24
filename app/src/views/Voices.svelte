@@ -1,6 +1,6 @@
 <script lang="ts">
   import { call } from "../lib/api";
-  import { voices, cast, setCast, stopSpeaking } from "../lib/voice.svelte";
+  import { VOICES, cast, setCast, stopSpeaking, sample } from "../lib/voice.svelte";
 
   let { cfg } = $props();
 
@@ -16,9 +16,12 @@
   {/if}
   {#each Object.keys(cast) as name}
     <label class="field"><span>{name}</span>
-      <select value={cast[name]} onchange={(e) => setCast(name, e.currentTarget.value)}>
-        {#each voices() as v}<option value={v.name}>{v.name}</option>{/each}
-      </select>
+      <div class="row">
+        <select class="grow" value={cast[name]} onchange={(e) => { setCast(name, e.currentTarget.value); sample(e.currentTarget.value); }}>
+          {#each VOICES as v}<option value={v.id}>{v.id} ({v.gender}, {v.about})</option>{/each}
+        </select>
+        <button class="ghost small" onclick={() => sample(cast[name])} aria-label="Hear {name}'s voice">▶</button>
+      </div>
     </label>
   {/each}
 </div>

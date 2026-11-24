@@ -1873,7 +1873,27 @@ pub fn relabel_value(v: &mut Value, labels: &BTreeMap<String, String>) {
     }
 }
 
+/// Game time for one exchange when the GM doesn't say otherwise: ten seconds.
+pub const EXCHANGE_SECONDS: i64 = 10;
+/// Longest `rest`/`regen` a GM may write without saying why.
+pub const SKIP_WITHOUT_REASON: i32 = 10;
+
+/// Does this `<rpg>` line move the clock itself (`rest`, `regen`, for one character or `all:`)?
+pub fn moves_clock(line: &str) -> bool {
+    let l = line.trim().trim_start_matches('-').trim();
+    let l = l.split_once(':').filter(|(who, _)| !who.contains(' ') || who.split_whitespace().count() <= 4).map_or(l, |(_, r)| r.trim());
+    let w = l.split_whitespace().next().unwrap_or("").to_lowercase();
+    w == "rest" || w == "regen" || line.trim().to_lowercase().starts_with("rest ") || line.trim().to_lowercase().starts_with("regen ")
+}
+
 impl World {
+    /// One ordinary exchange passes: every character gathers ten seconds' worth, quietly.
+    pub fn tick(&mut self) {
+        let minutes = BigRational::new(EXCHANGE_SECONDS.into(), 60.into());
+        for s in self.sheets.values_mut() {
+            s.regen(&minutes, false, &self.defs);
+        }
+    }
     /// The story's names back to the System's words, for arguments that name a frequency or stat.
     fn unlabel(&self, text: &str) -> String {
         let back: BTreeMap<String, String> = self.labels.iter().map(|(k, v)| (v.to_lowercase(), k.clone())).collect();
@@ -2215,12 +2235,21 @@ impl World {
                 format!("Surroundings: {}", s.env_why)
             }
             "regen" | "rest" => {
-                let mut words = rest.split_whitespace();
+                // rest 480 | slept the night at the inn
+                let (amount, why) = rest.split_once('|').map(|(a, w)| (a, w.trim())).unwrap_or((rest, ""));
+                let mut words = amount.split_whitespace();
                 let minutes = words.next().and_then(parse_rational).filter(|m| m.is_positive()).ok_or("regen needs minutes: regen 10 [resting]")?;
                 let resting = verb == "rest" || words.any(|w| w.eq_ignore_ascii_case("resting"));
+                // The clock runs at ten seconds an exchange. A longer skip has to be one the story shows.
+                if minutes > BigRational::from_integer(SKIP_WITHOUT_REASON.into()) && why.is_empty() {
+                    return Err(format!(
+                        "a time skip over {SKIP_WITHOUT_REASON} minutes needs the reason the story shows, like `{verb} {} | slept the night at the inn`. An ordinary exchange is about 10 seconds and the app already counts it",
+                        short(&minutes)
+                    ));
+                }
                 let got = s.regen(&minutes, resting, defs);
                 let g: Vec<String> = got.iter().filter(|(_, v)| v.is_positive()).map(|(p, v)| format!("{} +{}", freq(*p).spectrum, short(v))).collect();
-                format!("{} minutes{}: {}", short(&minutes), if resting { " resting" } else { "" }, if g.is_empty() { "nothing gathered".into() } else { g.join(", ") })
+                format!("{} minutes{}{}: {}", short(&minutes), if resting { " resting" } else { "" }, if why.is_empty() { String::new() } else { format!(" ({why})") }, if g.is_empty() { "nothing gathered".into() } else { g.join(", ") })
             }
             "spend" | "amplitude" => {
                 let (f, n) = rest.rsplit_once(char::is_whitespace).ok_or("spend needs: spend heat 300")?;
@@ -2330,14 +2359,15 @@ impl World {
                 let name = name.trim();
                 match sign {
                     "+" => {
-                        if !s.conditions.iter().any(|c| norm(c) == norm(name)) {
-                            s.conditions.push(name.to_string());
+                        match s.conditions.iter_mut().find(|c| crate::rpg::cond_key(c) == crate::rpg::cond_key(name)) {
+                            Some(c) => *c = name.to_string(),
+                            None => s.conditions.push(name.to_string()),
                         }
                         format!("Condition: {name}")
                     }
                     "-" => {
-                        s.conditions.retain(|c| norm(c) != norm(name));
-                        format!("Cleared: {name}")
+                        let i = crate::rpg::find_condition(s.conditions.iter().map(String::as_str), name)?;
+                        format!("Cleared: {}", s.conditions.remove(i))
                     }
                     _ => return Err("condition needs + or -".into()),
                 }

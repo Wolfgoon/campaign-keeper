@@ -10,6 +10,7 @@
   import Sound from "./Sound.svelte";
   import Voices from "./Voices.svelte";
   import Maps from "./Maps.svelte";
+  import TileMap from "./TileMap.svelte";
 
   let { cfg, leave, settings } = $props();
 
@@ -29,6 +30,7 @@
   let sheet = $state<any>(null);
   let labels = $state<any>({});
   let maps = $state<any[]>([]);
+  let tilemap = $state<any>(null);
   let characters = $state<string[]>([]);
   let activities = $state<any[]>([]);
   let closedActivities = $state<number[]>([]);
@@ -204,7 +206,7 @@
         case "welcome": phase = "seated"; error = ""; break;
         case "table":
           t = m.state; you = m.you; busy = m.busy; sheet = m.sheet; characters = m.characters;
-          labels = m.labels ?? {}; maps = m.maps ?? [];
+          labels = m.labels ?? {}; maps = m.maps ?? []; if ("tilemap" in m) tilemap = m.tilemap; // sent only when it changed
           activities = m.activities ?? [];
           talkLog = m.state.table?.talk ?? talkLog;
           // Never pull the page out from under someone typing: their words win until they save.
@@ -304,6 +306,7 @@
           <span class="grow"></span>
           <button class="ghost small" onclick={() => openSide("party")}>👥 Party</button>
           <button class="ghost small" onclick={() => openSide("status")}>📊 Sheet</button>
+          <button class="ghost small" onclick={() => openSide("map")}>🗺 Map</button>
           <button class="ghost small" onclick={() => openSide("note")}>📜 Notes</button>
         </div>
         <textarea rows="2" bind:value={action} placeholder={'What do you do?   > act   "speak"   /status'} aria-label="Your action" onkeydown={(e) => { if (e.key === "Enter" && !e.shiftKey && !platform.mobile) { e.preventDefault(); submit(); } }}></textarea>
@@ -322,7 +325,7 @@
     <aside class="side" class:open={sideOpen || !me?.character}>
       <div class="side-tabs">
         {#if me?.character}<button class="tab narrow-only" style="flex:none" aria-label="Back to the story" onclick={() => (sideOpen = false)}>← Story</button>{/if}
-        {#each [["party", "👥"], ["status", "Status"], ["note", "📜"], ["map", "🗺"], ["music", "🎵"], ["voices", "💬"]] as [id, label]}
+        {#each [["party", "👥"], ["status", "Status"], ["map", "🗺"], ["music", "🎵"], ["note", "📜"], ["voices", "💬"]] as [id, label]}
           <button class="tab" class:on={side === id} aria-label={id === "note" ? "Party notes" : id === "party" ? "Party" : id} onclick={() => (side = id)}>{label}</button>
         {/each}
       </div>
@@ -358,6 +361,7 @@
             <span class="small muted">{noteChanged ? "Unsaved changes" : "Saved"}</span>
           </div>
         {:else if side === "map"}
+          <div style="height:60vh;display:flex;flex-direction:column"><TileMap data={tilemap} /></div>
           <Maps list={maps} />
         {:else if side === "music"}
           <Sound {cfg} />

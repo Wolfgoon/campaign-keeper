@@ -1,0 +1,208 @@
+        Info Looking up installed tauri packages to check mismatched versions...
+     Running beforeBuildCommand `npm run build`
+
+> campaign-keeper@3.1.3 build
+> vite build
+
+[36mvite v6.4.5 [32mbuilding for production...[36m[39m
+transforming...
+7:27:01 PM [vite-plugin-svelte] src/views/Client.svelte:18:20 This reference only captures the initial value of `cfg`. Did you mean to reference it inside a derived instead?
+https://svelte.dev/e/state_referenced_locally
+16: 
+17:   let phase = $state("join"); // join, waiting, seated
+18:   let addr = $state(cfg?.join_addr ?? "");
+                           ^
+19:   let code = $state("");
+20:   let name = $state(cfg?.player_name ?? "");
+7:27:01 PM [vite-plugin-svelte] src/views/Client.svelte:20:20 This reference only captures the initial value of `cfg`. Did you mean to reference it inside a derived instead?
+https://svelte.dev/e/state_referenced_locally
+18:   let addr = $state(cfg?.join_addr ?? "");
+19:   let code = $state("");
+20:   let name = $state(cfg?.player_name ?? "");
+                           ^
+21:   let found = $state<any[]>([]);
+22:   let scanning = $state(false);
+7:27:01 PM [vite-plugin-svelte] src/views/Client.svelte:49:6 `log` is updated, but is not declared with `$state(...)`. Changing its value will not correctly trigger updates
+https://svelte.dev/e/non_reactive_update
+47:   let talkLog = $state<any[]>([]);
+48:   let side = $state("party");
+49:   let log: HTMLDivElement;
+                             ^
+50:   let seenMusic = 0;
+51:   let seenReplies = -1;
+7:27:02 PM [vite-plugin-svelte] src/views/Activity.svelte:31:6 `canvas` is updated, but is not declared with `$state(...)`. Changing its value will not correctly trigger updates
+https://svelte.dev/e/non_reactive_update
+29:   let extra = $state("");
+30: 
+31:   let canvas: SVGSVGElement;
+                               ^
+32:   function pt(e: PointerEvent) {
+33:     const r = canvas.getBoundingClientRect();
+7:27:03 PM [vite-plugin-svelte] src/views/Minigame.svelte:11:25 This reference only captures the initial value of `a`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally
+ 9:   const L = (k: string): string[] => a.lists?.[k] ?? [];
+10:   const num = (v: any, d: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Math.round(Number(v)) || d));
+11:   const difficulty = num(a.difficulty, 2, 1, 5);
+                              ^
+12:   const title = a.title ?? "it";
+13: 
+7:27:03 PM [vite-plugin-svelte] src/views/Minigame.svelte:12:16 This reference only captures the initial value of `a`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally
+10:   const num = (v: any, d: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Math.round(Number(v)) || d));
+11:   const difficulty = num(a.difficulty, 2, 1, 5);
+12:   const title = a.title ?? "it";
+                     ^
+13: 
+14:   // A shuffle that's the same each time the tab opens, so reopening it doesn't reroll the puzzle.
+7:27:03 PM [vite-plugin-svelte] src/views/Minigame.svelte:37:19 This reference only captures the initial value of `a`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally
+35: 
+36:   // --- lockpick: stop the moving pick inside the sweet spot, once per pin -------------------
+37:   const pins = num(a.pins, 3, 1, 8);
+                        ^
+38:   let picks = $state(num(a.picks, 3, 1, 9));
+39:   let set = $state(0);
+7:27:03 PM [vite-plugin-svelte] src/views/Minigame.svelte:38:25 This reference only captures the initial value of `a`. Did you mean to reference it inside a derived instead?
+https://svelte.dev/e/state_referenced_locally
+36:   // --- lockpick: stop the moving pick inside the sweet spot, once per pin -------------------
+37:   const pins = num(a.pins, 3, 1, 8);
+38:   let picks = $state(num(a.picks, 3, 1, 9));
+                              ^
+39:   let set = $state(0);
+40:   let lockMsg = $state("");
+7:27:03 PM [vite-plugin-svelte] src/views/Minigame.svelte:52:20 This reference only captures the initial value of `a`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally
+50: 
+51:   // --- dice: real rolls, shown tumbling ----------------------------------------------------
+52:   const diceSpec = (a.dice ?? "1d20") as string;
+                         ^
+53:   const dm = /^(\d{0,2})d(\d{1,3})([+-]\d{1,3})?$/i.exec(diceSpec.replace(/\s/g, "")) ?? ["", "1", "20", ""];
+54:   const dN = num(dm[1] || 1, 1, 1, 12), dS = num(dm[2], 20, 2, 100), dK = Number(dm[3] || 0);
+7:27:03 PM [vite-plugin-svelte] src/views/Minigame.svelte:57:29 This reference only captures the initial value of `a`. Did you mean to reference it inside a derived instead?
+https://svelte.dev/e/state_referenced_locally
+55:   let rolls = $state<number[]>([]);
+56:   let rolling = $state(0);
+57:   let rollsLeft = $state(num(a.rerolls, 0, 0, 5) + 1);
+                                  ^
+58:   const shown = $derived(rolling > t ? Array.from({ length: dN }, (_, i) => 1 + (Math.floor(t * 23 + i * 7) % dS)) : rolls);
+59:   function roll() {
+7:27:03 PM [vite-plugin-svelte] src/views/Minigame.svelte:70:55 This reference only captures the initial value of `a`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally
+68: 
+69:   // --- combo: turn the dials ---------------------------------------------------------------
+70:   const symbols = L("symbol").length ? L("symbol") : ((a.symbols ?? "0123456789") as string).includes(",") ? (a.symbols as string).split(",").map((s) => s.trim()) : [...((a.symbols ?? "0123456789") as string)];
+                                                            ^
+71:   const dials = num(a.length, 4, 1, 8);
+72:   let dial = $state<number[]>(Array(dials).fill(0));
+7:27:03 PM [vite-plugin-svelte] src/views/Minigame.svelte:70:110 This reference only captures the initial value of `a`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally
+68: 
+69:   // --- combo: turn the dials ---------------------------------------------------------------
+70:   const symbols = L("symbol").length ? L("symbol") : ((a.symbols ?? "0123456789") as string).includes(",") ? (a.symbols as string).split(",").map((s) => s.trim()) : [...((a.symbols ?? "0123456789") as string)];
+                                                                                                                   ^
+71:   const dials = num(a.length, 4, 1, 8);
+72:   let dial = $state<number[]>(Array(dials).fill(0));
+7:27:03 PM [vite-plugin-svelte] src/views/Minigame.svelte:70:171 This reference only captures the initial value of `a`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally
+68: 
+69:   // --- combo: turn the dials ---------------------------------------------------------------
+70:   const symbols = L("symbol").length ? L("symbol") : ((a.symbols ?? "0123456789") as string).includes(",") ? (a.symbols as string).split(",").map((s) => s.trim()) : [...((a.symbols ?? "0123456789") as string)];
+                                                                                                                                                                                ^
+71:   const dials = num(a.length, 4, 1, 8);
+72:   let dial = $state<number[]>(Array(dials).fill(0));
+7:27:03 PM [vite-plugin-svelte] src/views/Minigame.svelte:71:20 This reference only captures the initial value of `a`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally
+69:   // --- combo: turn the dials ---------------------------------------------------------------
+70:   const symbols = L("symbol").length ? L("symbol") : ((a.symbols ?? "0123456789") as string).includes(",") ? (a.symbols as string).split(",").map((s) => s.trim()) : [...((a.symbols ?? "0123456789") as string)];
+71:   const dials = num(a.length, 4, 1, 8);
+                         ^
+72:   let dial = $state<number[]>(Array(dials).fill(0));
+73:   const answer = a.answer ? String(a.answer).split(a.answer.includes(",") ? "," : "").map((s: string) => s.trim()) : null;
+7:27:03 PM [vite-plugin-svelte] src/views/Minigame.svelte:73:17 This reference only captures the initial value of `a`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally
+71:   const dials = num(a.length, 4, 1, 8);
+72:   let dial = $state<number[]>(Array(dials).fill(0));
+73:   const answer = a.answer ? String(a.answer).split(a.answer.includes(",") ? "," : "").map((s: string) => s.trim()) : null;
+                      ^
+74:   let triesLeft = $state(num(a.tries, 3, 1, 20));
+75:   let comboMsg = $state("");
+7:27:03 PM [vite-plugin-svelte] src/views/Minigame.svelte:73:35 This reference only captures the initial value of `a`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally
+71:   const dials = num(a.length, 4, 1, 8);
+72:   let dial = $state<number[]>(Array(dials).fill(0));
+73:   const answer = a.answer ? String(a.answer).split(a.answer.includes(",") ? "," : "").map((s: string) => s.trim()) : null;
+                                        ^
+74:   let triesLeft = $state(num(a.tries, 3, 1, 20));
+75:   let comboMsg = $state("");
+7:27:03 PM [vite-plugin-svelte] src/views/Minigame.svelte:73:51 This reference only captures the initial value of `a`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally
+71:   const dials = num(a.length, 4, 1, 8);
+72:   let dial = $state<number[]>(Array(dials).fill(0));
+73:   const answer = a.answer ? String(a.answer).split(a.answer.includes(",") ? "," : "").map((s: string) => s.trim()) : null;
+                                                        ^
+74:   let triesLeft = $state(num(a.tries, 3, 1, 20));
+75:   let comboMsg = $state("");
+7:27:03 PM [vite-plugin-svelte] src/views/Minigame.svelte:74:29 This reference only captures the initial value of `a`. Did you mean to reference it inside a derived instead?
+https://svelte.dev/e/state_referenced_locally
+72:   let dial = $state<number[]>(Array(dials).fill(0));
+73:   const answer = a.answer ? String(a.answer).split(a.answer.includes(",") ? "," : "").map((s: string) => s.trim()) : null;
+74:   let triesLeft = $state(num(a.tries, 3, 1, 20));
+                                  ^
+75:   let comboMsg = $state("");
+76:   const comboText = $derived(dial.map((i) => symbols[i]).join(" "));
+7:27:03 PM [vite-plugin-svelte] src/views/Minigame.svelte:89:20 This reference only captures the initial value of `a`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally
+87:   // --- choose: pick one or more ------------------------------------------------------------
+88:   const options = L("option").length ? L("option") : L("card");
+89:   const pickN = num(a.pick, 1, 1, Math.max(1, options.length));
+                         ^
+90:   let picked = $state<string[]>([]);
+91:   function toggle(o: string) {
+7:27:03 PM [vite-plugin-svelte] src/views/Minigame.svelte:96:33 This reference only captures the initial value of `a`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally
+94: 
+95:   // --- haggle: name a price and watch their face -------------------------------------------
+96:   const ask = Math.max(1, Number(a.ask) || 50);
+                                      ^
+97:   const cur = a.currency ?? "gold";
+98:   let offer = $state(Math.round(ask * 0.8));
+7:27:03 PM [vite-plugin-svelte] src/views/Minigame.svelte:97:14 This reference only captures the initial value of `a`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally
+ 95:   // --- haggle: name a price and watch their face -------------------------------------------
+ 96:   const ask = Math.max(1, Number(a.ask) || 50);
+ 97:   const cur = a.currency ?? "gold";
+                    ^
+ 98:   let offer = $state(Math.round(ask * 0.8));
+ 99:   const mood = $derived(offer >= ask ? "😄" : offer >= ask * 0.85 ? "🙂" : offer >= ask * 0.65 ? "😐" : offer >= ask * 0.45 ? "😠" : "🤬");
+7:27:03 PM [vite-plugin-svelte] src/views/Minigame.svelte:103:21 This reference only captures the initial value of `a`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally
+101:   // --- sequence: watch, then repeat --------------------------------------------------------
+102:   const seqSyms = L("symbol").length ? L("symbol") : ["🔥", "💧", "🌿", "⚡", "🌙", "☀"].slice(0, 3 + Math.min(3, difficulty));
+103:   const seqLen = num(a.length, 3 + difficulty, 2, 12);
+                           ^
+104:   const seqR = seeded(title + "seq");
+105:   const seq = Array.from({ length: seqLen }, () => seqSyms[Math.floor(seqR() * seqSyms.length)]);
+7:27:03 PM [vite-plugin-svelte] src/views/Minigame.svelte:116:20 This reference only captures the initial value of `a`. Did you mean to reference it inside a closure instead?
+https://svelte.dev/e/state_referenced_locally
+114: 
+115:   // --- aim: hit the moving target ----------------------------------------------------------
+116:   const shots = num(a.shots, 3, 1, 10);
+                          ^
+117:   let hits = $state<number[]>([]);
+118:   const target = $derived({ x: 50 + Math.sin(t * (0.7 + difficulty * 0.3)) * 38, y: 50 + Math.sin(t * (1.1 + difficulty * 0.25) + 1) * 30 });
+[32m✓[39m 156 modules transformed.
+rendering chunks...
+computing gzip size...
+[2mdist/[22m[32mindex.html                 [39m[1m[2m  0.42 kB[22m[1m[22m[2m │ gzip:   0.28 kB[22m
+[2mdist/[22m[35massets/index-CdFY0vqS.css  [39m[1m[2m 17.95 kB[22m[1m[22m[2m │ gzip:   4.85 kB[22m
+[2mdist/[22m[36massets/index-DFnDP-sE.js   [39m[1m[2m309.46 kB[22m[1m[22m[2m │ gzip: 107.76 kB[22m
+[32m✓ built in 3.62s[39m
+   Compiling campaign-keeper v3.1.3 (C:\Users\patri\OneDrive\Documents\GitHub\campaign-keeper\app\src-tauri)
+    Finished `release` profile [optimized] target(s) in 3m 11s
+       Built application at: C:\Users\patri\OneDrive\Documents\GitHub\campaign-keeper\app\src-tauri\target\release\campaign-keeper.exe
+        Info Patching C:\Users\patri\OneDrive\Documents\GitHub\campaign-keeper\app\src-tauri\target\release\campaign-keeper.exe with bundle type information: nsis
+        Info Target: x64
+     Running makensis to produce C:\Users\patri\OneDrive\Documents\GitHub\campaign-keeper\app\src-tauri\target\release\bundle\nsis\Campaign Keeper_3.1.3_x64-setup.exe
+    Finished 1 bundle at:
+        C:\Users\patri\OneDrive\Documents\GitHub\campaign-keeper\app\src-tauri\target\release\bundle\nsis\Campaign Keeper_3.1.3_x64-setup.exe (7.16 MiB)
+

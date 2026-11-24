@@ -10,6 +10,7 @@ pub mod chat;
 pub mod config;
 pub mod engine;
 pub mod game;
+pub mod ledger;
 pub mod map;
 pub mod memory;
 pub mod net;
@@ -20,6 +21,8 @@ pub mod rpg;
 pub mod scribe;
 pub mod sync;
 pub mod tags;
+pub mod tileart;
+pub mod tilemap;
 pub mod util;
 
 use std::path::PathBuf;
@@ -422,6 +425,25 @@ fn maps(s: S) -> R<Vec<Value>> {
 }
 
 #[tauri::command]
+fn tilemap(s: S) -> R<Value> {
+    Ok(tilemap::view(&dir(&s)?))
+}
+
+/// Draw any map art that's missing (in the background), or with `redo` all of it afresh.
+#[tauri::command]
+fn tileart_fill(app: tauri::AppHandle, s: S, redo: Option<bool>) -> R<()> {
+    let (cfg, d) = {
+        let g = s.game.lock().map_err(|_| "state lost")?;
+        (g.cfg.clone(), g.dir.clone().ok_or("No campaign is open.")?)
+    };
+    if redo == Some(true) {
+        tileart::reset(&d);
+    }
+    game::fill_tileart(&app, &cfg, &d);
+    Ok(())
+}
+
+#[tauri::command]
 fn tracks(s: S) -> R<Value> {
     Ok(kept(campaign::keeper(&dir(&s)?).join("music"), "json").into_iter().filter_map(|(_, m)| serde_json::from_str::<Value>(&m).ok()).collect())
 }
@@ -590,6 +612,92 @@ async fn scribe_run(s: S<'_>, request: String, include_chat: bool) -> R<scribe::
         (g.cfg.clone(), g.dir.clone().ok_or("No campaign is open.")?, g.session.entries.clone())
     };
     off_ui(move || scribe::run(&cfg, &d, &entries, &request, include_chat)).await
+}
+
+// --- the Ledger: a chat for the status windows ------------------------------
+
+#[tauri::command]
+fn ledger_history(s: S) -> R<Vec<ledger::Line>> {
+    Ok(ledger::load(&dir(&s)?))
+}
+
+#[tauri::command]
+async fn ledger_ask(s: S<'_>, message: String) -> R<Vec<ledger::Line>> {
+    let message = message.trim().to_string();
+    if message.is_empty() {
+        return Err("Say what to fix or check.".into());
+    }
+    let (cfg, d, rules, story) = {
+        let g = s.game.lock().map_err(|_| "state lost")?;
+        // The last stretch of play, so "do the books" has something to count.
+        (g.cfg.clone(), g.dir.clone().ok_or("No campaign is open.")?, g.rules.clone(), ledger::story(&g.session.entries, 24))
+    };
+    let mut hist = ledger::load(&d);
+    let d2 = d.clone();
+    let h2 = hist.clone();
+    let m2 = message.clone();
+    let answer = off_ui(move || ledger::ask(&cfg, &d2, &rules, &story, &h2, &m2)).await?;
+    let _g = ledger::LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    // Reloaded: the automatic check may have added to it while this was thinking.
+    hist = ledger::load(&d);
+    hist.push(ledger::Line { role: "user".into(), text: message, ..Default::default() });
+    hist.push(answer);
+    ledger::save(&d, &hist)?;
+    Ok(ledger::load(&d))
+}
+
+/// Apply the changes a Ledger answer proposed (only the ones still `picked`), and tell the GM.
+#[tauri::command]
+fn ledger_apply(app: AppHandle, s: S, index: usize, picked: Vec<String>) -> R<Vec<ledger::Line>> {
+    let d = dir(&s)?;
+    let _l = ledger::LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut hist = ledger::load(&d);
+    let line = hist.get_mut(index).ok_or("That answer is gone.")?;
+    if !line.results.is_empty() || line.discarded {
+        return Err("Those changes were already settled.".into());
+    }
+    let mut g = s.game.lock().map_err(|_| "state lost")?;
+    let default = ledger::default_character(&g.rules);
+    let mut results = Vec::new();
+    for c in line.changes.iter().filter(|c| picked.contains(c)) {
+        results.push(match g.rules.apply(c, &default) {
+            Ok(m) => m.trim_start_matches(ad::SYSTEM_ONLY).to_string(),
+            Err(e) => format!("Refused: {c} ({e})"),
+        });
+    }
+    if results.is_empty() {
+        line.discarded = true;
+    } else {
+        rpg::save(&d, &g.rules)?;
+        let done: Vec<&String> = results.iter().filter(|r| !r.starts_with("Refused")).collect();
+        if !done.is_empty() {
+            g.session.rpg_notices.push(format!("The player corrected the status windows out of play (bookkeeping, not story events): {}", done.iter().map(|s| s.as_str()).collect::<Vec<_>>().join("; ")));
+            let _ = chat::save(&d, &g.session);
+        }
+        line.results = results;
+    }
+    drop(g);
+    ledger::save(&d, &hist)?;
+    // The status panel and the table's players pick the new numbers up.
+    let _ = app.emit("game", json!({ "kind": "entry", "data": null }));
+    Ok(hist)
+}
+
+#[tauri::command]
+fn ledger_discard(s: S, index: usize) -> R<Vec<ledger::Line>> {
+    let d = dir(&s)?;
+    let _l = ledger::LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut hist = ledger::load(&d);
+    if let Some(l) = hist.get_mut(index) {
+        l.discarded = true;
+    }
+    ledger::save(&d, &hist)?;
+    Ok(hist)
+}
+
+#[tauri::command]
+fn ledger_clear(s: S) -> R<()> {
+    ledger::save(&dir(&s)?, &[])
 }
 
 #[tauri::command]
@@ -884,7 +992,8 @@ pub fn run() {
                     match kind {
                         // A human GM's private chat with the AI is never shown to the table, live or after.
                         "stream" if !st.game.lock().map(|g| g.private_turn).unwrap_or(true) => table::relay_stream(&t, &v["data"]),
-                        "entry" | "done" => table::sync(&st.game, &t),
+                        // The picture map: once per batch of changes, never once per art piece.
+                        "entry" | "done" | "tilemap_done" => table::sync(&st.game, &t),
                         _ => {}
                     }
                 }
@@ -899,7 +1008,7 @@ pub fn run() {
             open_campaign, new_campaign, close_campaign, list_campaigns, export_campaigns, forget_recent,
             overview, list_files, read_file, write_file, rename_file,
             trash_file, search_files, store_save, new_session_log, get_entries, play_state, send_text, begin, stop_turn,
-            end_chat, notebook, activity_close, export_all, pictures, maps, tracks, rpg_state, rpg_enable, rpg_disable, rpg_spend, rpg_terms, rpg_views,
+            end_chat, notebook, activity_close, export_all, pictures, maps, tilemap, tileart_fill, ledger_history, ledger_ask, ledger_apply, ledger_discard, ledger_clear, tracks, rpg_state, rpg_enable, rpg_disable, rpg_spend, rpg_terms, rpg_views,
             memory_status, memory_list, memory_search, memory_add, memory_update, memory_delete, memory_catch_up,
             scribe_run, scribe_presets, scribe_apply, scribe_restore, table_open, table_close, table_state, table_decide,
             table_auto_admit, table_host_character, table_host_action, table_send_now, table_talk, table_scan,

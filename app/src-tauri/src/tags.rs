@@ -117,15 +117,24 @@ fn activity(mut a: Value, body: &str) -> Value {
         }
     });
     let (mut items, mut tools, mut prompt) = (Vec::new(), Vec::new(), Vec::new());
+    // Every other `- word: value` line is a list the minigame uses: options, steps, symbols…
+    let mut lists: serde_json::Map<String, Value> = serde_json::Map::new();
     for l in body.lines().map(str::trim) {
         if let Some(i) = l.strip_prefix("- item:") {
             items.push(i.trim().to_string());
         } else if let Some(i) = l.strip_prefix("- tool:") {
             tools.push(i.trim().to_string());
+        } else if let Some((k, v)) = l.strip_prefix("- ").and_then(|r| r.split_once(':')).filter(|(k, v)| !k.is_empty() && k.len() <= 16 && k.chars().all(|c| c.is_ascii_alphabetic()) && !v.trim().is_empty()) {
+            if let Some(Value::Array(v2)) = lists.get_mut(&k.to_lowercase()).map(|x| x as &mut Value) {
+                v2.push(json!(v.trim()));
+            } else {
+                lists.insert(k.to_lowercase(), json!([v.trim()]));
+            }
         } else if !l.is_empty() {
             prompt.push(l.to_string());
         }
     }
+    a["lists"] = Value::Object(lists);
     a["prompt"] = json!(prompt.join("\n"));
     a["items"] = json!(items);
     a["tools"] = json!(tools);
@@ -194,6 +203,21 @@ secret plans
         assert_eq!(a["prompt"], "Fix the wheel.");
         assert_eq!(p.rpg_lines, vec!["xp +25", "item + Rope"]);
         assert_eq!(p.voices[0]["name"], "Tobin");
+    }
+
+    #[test]
+    fn minigame_lists_are_gathered() {
+        let p = parse("<activity type=\"choose\" title=\"Which door?\">
+Pick one.
+- option: The red door
+- option: The blue door
+- step: first
+- note to self: not a list
+</activity>");
+        let a = p.activity.unwrap();
+        assert_eq!(a["lists"]["option"], serde_json::json!(["The red door", "The blue door"]));
+        assert_eq!(a["lists"]["step"][0], "first");
+        assert!(a["prompt"].as_str().unwrap().contains("note to self"));
     }
 
     #[test]

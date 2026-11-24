@@ -53,6 +53,10 @@ pub struct Config {
     pub context_mode: String,
     /// Have the helper check each reply against what's remembered.
     pub continuity_check: bool,
+    /// A helper model keeps the picture map in step with the story.
+    pub tilemap_enabled: bool,
+    /// The Ledger checks the status windows by itself every few exchanges.
+    pub ledger_auto: bool,
     pub playstyle_enabled: bool,
 
     /// Turn the GM's pictures into pixel art.
@@ -106,6 +110,8 @@ impl Default for Config {
             helper_model: "auto".into(),
             context_mode: "smart".into(),
             continuity_check: false,
+            tilemap_enabled: true,
+            ledger_auto: true,
             playstyle_enabled: true,
             pixel_art: true,
             pixel_size: 96,

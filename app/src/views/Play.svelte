@@ -6,6 +6,8 @@
   import { platform } from "../lib/platform.svelte";
   import Art from "./Art.svelte";
   import Maps from "./Maps.svelte";
+  import MapTab from "./MapTab.svelte";
+  import LedgerDock from "./LedgerDock.svelte";
   import { speakEntry, stopSpeaking } from "../lib/voice.svelte";
   import Entry from "./Entry.svelte";
   import Status from "./Status.svelte";
@@ -43,6 +45,7 @@
     ["✔ Confirm", "Confirm what's true right now, out of character: what has definitely happened, what we know for certain, and what is still unclear. Don't continue the story."],
     ["🔍 More detail", "More detail, please, out of character: what's in front of me, what I can see, hear, smell and touch, who is here and what they are doing, and anything I could use. Be concrete and specific, and keep it consistent with what is already written."],
     ["🧷 No retcons", "Out of character: check this chat and the campaign files for anything that contradicts what we have already established. Nothing that has happened may be changed, softened or rewritten. If something is wrong, tell me plainly instead of narrating it away."],
+    ["📒 Books", "Bookkeeping, out of character: go through what has happened and bring my status up to date: inventory (items gained, used, sold, lost), money, health and conditions. Change the status window to match, then list what you changed. No new events. Also: "],
   ];
   const hasSave = $derived(!!info.saves);
 
@@ -237,6 +240,7 @@
           <button class="ghost small" disabled={busy} onclick={() => send("/save")}>💾 /save</button>
           <button class="ghost small" onclick={() => go("party")}>👥 Party</button>
           <button class="ghost small" onclick={() => go("host:scribe")}>✏ Scribe</button>
+          <button class="ghost small" title="Fix inventory, money and health outside the story" onclick={() => go("host:ledger")}>📒 Ledger</button>
           <button class="small narrow-only" onclick={() => { sideOpen = true; loadSide(); }}>☰ Status, map, music…</button>
           {#if busy}<button class="small danger" onclick={() => call("stop_turn")}>⏹ Stop</button>{/if}
         </div>
@@ -282,7 +286,7 @@
   <aside class="side" class:open={sideOpen}>
     <div class="side-tabs">
       <button class="tab narrow-only" style="flex:none" aria-label="Back to the story" onclick={() => (sideOpen = false)}>← Story</button>
-      {#each [["status", "Status"], ["pics", "🖼"], ["map", "🗺"], ["music", "🎵"], ["voices", "💬"]] as [id, name]}
+      {#each [["status", "Status"], ["map", "🗺"], ["music", "🎵"], ["pics", "🖼"], ["voices", "💬"]] as [id, name]}
         <button class="tab" class:on={side === id} aria-label={id} onclick={() => { side = id; loadSide(); }}>{name}</button>
       {/each}
     </div>
@@ -293,6 +297,7 @@
         {#if !pics.length}<p class="small muted">None yet. The GM draws maps, items and characters when they matter to the story.</p>{/if}
         {#each pics as p}<Art {p} />{/each}
       {:else if side === "map"}
+        <div style="height:60vh;display:flex;flex-direction:column"><MapTab /></div>
         <Maps list={maps} />
       {:else if side === "music"}
         <Sound {cfg} />
@@ -315,6 +320,8 @@
     <button class="toast" onclick={() => (openActivity = a)}>{a.icon ?? "✍"} {a.title ?? "An activity is open"}</button>
   {/if}
 {/each}
+<LedgerDock open={() => go("host:ledger")} />
+
 {#if openActivity}
   <Activity a={openActivity}
     submit={async (text: string, id: number) => { openActivity = null; await call("activity_close", { id }); await send(text); }}

@@ -132,6 +132,8 @@ pub struct Inner {
     pub next_conn: u64,
     pub round: u64,
     pub last_sent: usize,
+    /// Seat id -> the picture map version that seat last got, so it's only sent when it changes.
+    pub tile_seen: HashMap<u64, u64>,
 }
 
 pub struct Table {
@@ -253,8 +255,8 @@ fn safe_entries(st: &Shared, table: &Table) -> Vec<Value> {
     out
 }
 
-fn table_for(st: &Shared, t: &Table, character: &str, you: u64) -> Value {
-    let (sheet, activities, busy, labels, maps, note) = match st.lock() {
+fn table_for(st: &Shared, t: &Table, character: &str, you: u64, fresh: bool) -> Value {
+    let (sheet, activities, busy, labels, maps, note, dir) = match st.lock() {
         Ok(s) => (
             s.rules.view(character),
             s.session.activities.iter().filter(|a| a["for"].as_str().is_none_or(|f| f.eq_ignore_ascii_case(character))).cloned().collect::<Vec<_>>(),
@@ -262,11 +264,25 @@ fn table_for(st: &Shared, t: &Table, character: &str, you: u64) -> Value {
             s.rules.labels.clone(),
             s.dir.as_deref().map(crate::map::views).unwrap_or_default(),
             s.dir.as_deref().map(|d| std::fs::read_to_string(d.join(NOTE_FILE)).unwrap_or_default()).unwrap_or_default(),
+            s.dir.clone(),
         ),
-        Err(_) => (None, Vec::new(), false, Default::default(), Vec::new(), String::new()),
+        Err(_) => (None, Vec::new(), false, Default::default(), Vec::new(), String::new(), None),
     };
+    // The picture map (with its art) is large and this runs on every streamed word: it goes out
+    // only when it changed since this seat last got it, and is read outside the game lock.
+    let tiles = dir.as_deref().and_then(|d| {
+        let stamp = crate::tilemap::stamp(d);
+        let mut g = t.inner.lock().ok()?;
+        let seen = g.tile_seen.insert(you, stamp);
+        drop(g);
+        (fresh || seen != Some(stamp)).then(|| crate::tilemap::view(d))
+    });
     // Each player gets their own sheet and the shared page: nobody reads anyone else's sheet.
-    json!({ "t": "table", "you": you, "busy": busy, "state": t.state(), "characters": characters(st), "sheet": sheet, "activities": activities, "labels": labels, "maps": maps, "note": note })
+    let mut v = json!({ "t": "table", "you": you, "busy": busy, "state": t.state(), "characters": characters(st), "sheet": sheet, "activities": activities, "labels": labels, "maps": maps, "note": note });
+    if let Some(tiles) = tiles {
+        v["tilemap"] = tiles;
+    }
+    v
 }
 
 /// Save the party's shared notes. One fixed file, so nothing else can be written this way.
@@ -293,7 +309,7 @@ pub fn sync(st: &Shared, t: &Arc<Table>) {
     let seats: Vec<(Option<Tx<Value>>, String, u64)> = t.inner.lock().map(|g| g.seats.iter().filter(|s| s.admitted).map(|s| (s.tx.clone(), s.character.clone(), s.id)).collect()).unwrap_or_default();
     for (tx, c, id) in seats {
         if let Some(tx) = tx {
-            let _ = tx.send(table_for(st, t, &c, id));
+            let _ = tx.send(table_for(st, t, &c, id, false));
         }
     }
 }
@@ -549,7 +565,7 @@ fn welcome(st: &Shared, t: &Arc<Table>, id: u64) {
     let c = t.inner.lock().ok().and_then(|g| g.seats.iter().find(|s| s.id == id).map(|s| (s.tx.clone(), s.character.clone())));
     if let Some((Some(tx), character)) = c {
         let _ = tx.send(json!({ "t": "transcript", "entries": safe_entries(st, t) }));
-        let _ = tx.send(table_for(st, t, &character, id));
+        let _ = tx.send(table_for(st, t, &character, id, true));
     }
 }
 

@@ -227,6 +227,8 @@
         <select bind:value={cfg.context_mode}><option value="smart">Smart: core files whole, the rest recalled when relevant</option><option value="full">Everything, every turn</option></select>
       </label>
       <label class="field"><span>Helper model for background jobs ("auto" uses the cheapest fit)</span><input bind:value={cfg.helper_model} /></label>
+      <label class="check small"><input type="checkbox" bind:checked={cfg.ledger_auto} /> <span>Every 3 exchanges, have the Ledger check the status windows and suggest fixes (bottom-left of Play; nothing changes until you apply it)</span></label>
+      <label class="check small"><input type="checkbox" bind:checked={cfg.tilemap_enabled} /> <span>Keep the picture map (Map tab) up to date: the helper model redraws it after each reply</span></label>
       <label class="check small"><input type="checkbox" bind:checked={cfg.continuity_check} /> <span>Check each reply against memory for contradictions (uses the helper once per turn)</span></label>
       <label class="check small"><input type="checkbox" bind:checked={cfg.playstyle_enabled} /> <span>Learn how I like to play, across campaigns</span></label>
     {/if}
